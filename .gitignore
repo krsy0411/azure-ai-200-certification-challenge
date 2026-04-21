@@ -1,0 +1,55 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Env / Secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+azure-credentials.json
+.azure/
+.msal_cache
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- Docker ----
+.docker/
+
+# ---- Bicep / Terraform ----
+*.tfstate
+*.tfstate.backup
+.terraform/
+*.bicep.generated.json
+
+# ---- Local AI / data dumps ----
+data/local/
+*.sqlite
+*.db
+tmp/
