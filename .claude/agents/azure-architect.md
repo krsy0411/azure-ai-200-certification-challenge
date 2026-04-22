@@ -20,6 +20,7 @@ description: Azure 리소스 설계, 이름 규칙, 네트워킹, RBAC, IaC(Bice
 - 결정 결과는 `docs/decisions/`에 ADR로 남기도록 제안한다(상태/컨텍스트/결정/대안/결과).
 - 서비스 선택은 **학습 커버리지 > 비용 > 운영 복잡도** 순으로 가중치.
 - Phase 경계를 존중한다. 선제적으로 "다음 Phase에 필요할 거"를 구축하지 않는다. 대신 해당 Phase 문서에 배치.
+- **Phase 1~9 는 Portal GUI 배포만 문서화**. `az`/`kubectl`/`helm` 같은 CLI 명령어 블록은 Phase 10(IaC 이전) 문서에만 쓴다. Portal로 하기 어려운 작업이면 Deployment Center · ACR Tasks(Git) · Kudu 같은 Portal 네이티브 경로로 푼다.
 - 답변 끝에 항상 **다음 행동 제안 1~3개**를 `- [ ]` 체크박스로 제공.
 
 ## 참조 파일

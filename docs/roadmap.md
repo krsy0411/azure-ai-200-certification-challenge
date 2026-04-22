@@ -5,8 +5,9 @@
 ## 전 Phase 공통 Definition of Done
 
 - [ ] 코드가 로컬에서 동작 (Docker로 실행 가능)
-- [ ] Azure에 리소스가 배포되고 엔드포인트가 살아 있음 (`curl` 또는 UI로 검증)
-- [ ] `docs/learning-paths/0N-*.md`에 실사용 명령어·SDK 호출·함정(삽질) 포인트 기록
+- [ ] **Azure Portal GUI로 배포**되고 엔드포인트가 살아 있음 (브라우저/API 테스트 탭으로 검증) — Phase 1~9 는 CLI/IaC 사용 금지
+- [ ] Portal 단계마다 스크린샷을 `docs/learning-paths/screenshots/0N/` 에 추가
+- [ ] `docs/learning-paths/0N-*.md` 에 Portal 탐색 경로·필드값·검증 포인트·함정 기록
 - [ ] 의미 있는 커밋 메시지 (`feat(phase-N): ...`)
 - [ ] 사용자 리뷰 요청 후 승인 → 다음 Phase 착수
 
@@ -133,6 +134,16 @@
 
 ---
 
-## Phase 10 (옵션) — IaC 정리
+## Phase 10 — 수동 Portal 배포 → CLI → Bicep IaC 이전
 
-모든 배포 스크립트를 **Bicep 모듈**로 재조직. Phase 1~9에서 수동 배포한 명령어를 한 번에 재구성 가능하게. 사용자가 "IaC 진행" 요청할 때 착수.
+**대응 경로**: (AI-200 범위 밖 · 포트폴리오 완성도 부스터)
+**목표**: Phase 1~9 에서 **Azure Portal 로 수동 구축한 모든 리소스**를, 먼저 `az` CLI 명령어 시퀀스로 재현한 뒤, 그 위에 Bicep 모듈을 얹어 "수동 → 스크립트 → 선언형 IaC" 라는 3단 스토리를 완결한다.
+
+- **10-A**: 각 Phase 별 Portal 작업을 `az` CLI 블록으로 재작성 (`docs/learning-paths/10-iac-migration.md`)
+- **10-B**: CLI → Bicep 모듈화 (리소스 그룹 단위 `infra/modules/*.bicep` + `main.bicep` 조립)
+- **10-C**: `bicep what-if` → `az deployment group create` 로 Phase 1~9 전체 재배포 가능 검증
+- **10-D**: GitHub Actions workflow 로 CI 자동화(선택)
+
+**Why:** 자격증 교육 자료로서 "Portal vs 코드" 대비가 강력한 학습 포인트. 또한 실무 관점에서 "재현 가능성"을 입증.
+
+**산출물**: `docs/learning-paths/10-iac-migration.md`, `infra/modules/*.bicep`, `infra/main.bicep`, `infra/envs/dev.bicepparam`

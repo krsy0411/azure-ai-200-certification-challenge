@@ -14,8 +14,9 @@
    - 한 Phase는 (구현 → 실배포 검증 → 문서 업데이트) 3단계가 모두 끝나야 완료.
 2. **문서 업데이트는 구현의 일부.** `docs/learning-paths/0N-*.md`에 실제 사용한 명령어·SDK 호출·함정 포인트를 남긴다.
 3. **언어**: 사용자 커뮤니케이션·문서는 한국어. 코드 주석은 최소화(영문/한국어 모두 허용).
-4. **실제 Azure 배포**가 전제. `az` CLI 명령어나 `az deployment` 스크립트를 문서에 남긴다. 배포 커밋은 사용자가 자격 증명으로 수행할 때까지 **직접 실행하지 말 것.**
-5. **보안**: 시크릿은 Phase 8 이후 Key Vault + 관리형 ID가 표준. 그 전에는 `.env`를 쓰되 `.gitignore`로 반드시 제외.
+4. **배포 방식 — Portal 우선, CLI는 Phase 10.** Phase 1~9 의 실배포는 반드시 **Azure Portal GUI 단계별 가이드** 형식으로 문서화하고 스크린샷 슬롯을 남긴다(교육 자료 목적). `az` CLI · `kubectl` · Helm 등 커맨드 스크립트는 **Phase 10(IaC 이전)** 에서만 등장. Phase 1~9 문서에 선제적으로 CLI 를 쓰지 말 것. Portal 에서 어려운 작업은 Deployment Center · ACR Tasks(Git 연동) 등 Portal 네이티브 경로로 푼다.
+5. **실제 Azure 배포 실행은 사용자가 수행.** Claude 는 Portal 경로 가이드와 필드값만 준비하고, 사용자가 Portal에서 직접 클릭한 뒤 스크린샷을 `docs/learning-paths/screenshots/0N/` 에 추가한다.
+6. **보안**: 시크릿은 Phase 8 이후 Key Vault + 관리형 ID가 표준. 그 전에는 `.env`를 쓰되 `.gitignore`로 반드시 제외.
 
 ## Azure 리소스 네이밍 · 리전 규칙 (고정)
 
