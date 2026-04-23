@@ -14,8 +14,8 @@
    - 한 Phase는 (구현 → 실배포 검증 → 문서 업데이트) 3단계가 모두 끝나야 완료.
 2. **문서 업데이트는 구현의 일부.** `docs/learning-paths/0N-*.md`에 실제 사용한 명령어·SDK 호출·함정 포인트를 남긴다.
 3. **언어**: 사용자 커뮤니케이션·문서는 한국어. 코드 주석은 최소화(영문/한국어 모두 허용).
-4. **배포 방식 — Portal 우선, CLI는 Phase 10.** Phase 1~9 의 실배포는 반드시 **Azure Portal GUI 단계별 가이드** 형식으로 문서화하고 스크린샷 슬롯을 남긴다(교육 자료 목적). `az` CLI · `kubectl` · Helm 등 커맨드 스크립트는 **Phase 10(IaC 이전)** 에서만 등장. Phase 1~9 문서에 선제적으로 CLI 를 쓰지 말 것. Portal 에서 어려운 작업은 Deployment Center · ACR Tasks(Git 연동) 등 Portal 네이티브 경로로 푼다.
-5. **실제 Azure 배포 실행은 사용자가 수행.** Claude 는 Portal 경로 가이드와 필드값만 준비하고, 사용자가 Portal에서 직접 클릭한 뒤 스크린샷을 `docs/learning-paths/screenshots/0N/` 에 추가한다.
+4. **배포 방식 — Bicep IaC 우선.** Phase 1~9 의 모든 리소스 프로비저닝·구성은 **Bicep 모듈**로 선언하고, 각 Phase 는 단일 엔트리 `infra/phases/0N-*/main.bicep` 에서 모듈을 조립해 `az deployment group create` / `az deployment sub create` 로 배포한다. Portal GUI 는 스크린샷·교육 산출물이 아니라 **결과 확인용**으로만 사용한다. **예외 — 컨테이너 이미지 빌드·ACR 푸시**: IaC 로 선언할 수 없는 작업이므로 `docker build --platform linux/amd64` + `docker push` + `az acr login` CLI 를 각 Phase 문서의 "이미지 빌드·푸시" 하위에서 사용. **Phase 10** 은 Phase 1~9 의 `main.bicep` 을 `infra/main.bicep` 에 상위 조립하고 GitHub Actions CI 로 자동화하는 **축소된 범위**다.
+5. **실제 배포 실행은 사용자가 수행.** Claude 는 Bicep 모듈·파라미터·배포 명령어를 준비하고, 사용자가 `az deployment ... what-if` 로 검토 후 실제 배포를 실행한다. 문서의 "함정·교훈" 섹션은 배포 후 사용자/Claude 가 같이 채운다.
 6. **보안**: 시크릿은 Phase 8 이후 Key Vault + 관리형 ID가 표준. 그 전에는 `.env`를 쓰되 `.gitignore`로 반드시 제외.
 
 ## Azure 리소스 네이밍 · 리전 규칙 (고정)

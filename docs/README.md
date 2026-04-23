@@ -24,8 +24,8 @@ Azure AI-200 챌린지의 모든 설계 문서·학습 노트·결정 기록을 
 | 7 | [07-backend-services.md](learning-paths/07-backend-services.md) | AI 솔루션용 백엔드 서비스 통합 |
 | 8 | [08-secrets-config.md](learning-paths/08-secrets-config.md) | AI 솔루션용 애플리케이션 비밀·구성 관리 |
 | 9 | [09-observability.md](learning-paths/09-observability.md) | Azure에서 앱 관찰 및 문제 해결 |
-| 10 | [10-iac-migration.md](learning-paths/10-iac-migration.md) | 수동 Portal 배포 → CLI → Bicep IaC 이전 (포트폴리오 부스터) |
+| 10 | [10-iac-migration.md](learning-paths/10-iac-migration.md) | 상위 조립 + GitHub Actions CI (포트폴리오 부스터) |
 
-## 스크린샷 자료
+## IaC 산출물
 
-Phase 1~9는 Azure Portal 기반 배포 가이드입니다. 각 Phase 의 Portal 스크린샷은 `learning-paths/screenshots/0N/` 아래에 `<순번>-<이름>.png` 규칙으로 저장합니다.
+Phase 1~9 각자의 Bicep 모듈·엔트리는 `infra/phases/0N-*/` 아래, 재사용 모듈은 `infra/modules/` 에, Phase 10 상위 조립은 `infra/main.bicep` 에 둡니다. 각 학습 경로 문서는 해당 Phase Bicep 의 핵심 블록을 인용해 "이 리소스가 왜 이 필드값을 가지는가" 를 설명합니다.

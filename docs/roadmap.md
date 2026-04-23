@@ -1,13 +1,15 @@
 # 9-Phase 단계형 로드맵
 
-엔터프라이즈 RAG 지식 비서를 AI-200의 9개 학습 경로 순서대로 쌓아 올린다. 각 Phase는 **(1) 구현 → (2) 실제 Azure 배포/검증 → (3) 문서 업데이트** 3단계로 구성되며, 세 단계가 모두 끝나야 다음 Phase로 넘어간다.
+엔터프라이즈 RAG 지식 비서를 AI-200의 9개 학습 경로 순서대로 쌓아 올린다. 각 Phase는 **(1) 구현 → (2) Bicep IaC 작성 + 실제 배포/검증 → (3) 문서 업데이트** 3단계로 구성되며, 세 단계가 모두 끝나야 다음 Phase로 넘어간다.
 
 ## 전 Phase 공통 Definition of Done
 
 - [ ] 코드가 로컬에서 동작 (Docker로 실행 가능)
-- [ ] **Azure Portal GUI로 배포**되고 엔드포인트가 살아 있음 (브라우저/API 테스트 탭으로 검증) — Phase 1~9 는 CLI/IaC 사용 금지
-- [ ] Portal 단계마다 스크린샷을 `docs/learning-paths/screenshots/0N/` 에 추가
-- [ ] `docs/learning-paths/0N-*.md` 에 Portal 탐색 경로·필드값·검증 포인트·함정 기록
+- [ ] `infra/phases/0N-*/main.bicep` + 모듈 + `main.bicepparam` 작성, `bicep build` 경고 없음
+- [ ] `az deployment group what-if` (또는 Phase 1 한정 `az deployment sub what-if`) 로 변경 내역 사전 검토
+- [ ] 실제 배포 후 엔드포인트가 살아 있음 — HTTP 스모크 테스트(`curl` · Swagger · 브라우저) 통과
+- [ ] `docs/learning-paths/0N-*.md` 에 아키텍처 요약 · **Bicep 핵심 코드 인용** · 배포 명령 · 검증 결과 · 함정 기록
+- [ ] 이미지 빌드·푸시 필요한 Phase 는 사용한 `docker build` / `docker push` 명령도 동일 문서에 기록
 - [ ] 의미 있는 커밋 메시지 (`feat(phase-N): ...`)
 - [ ] 사용자 리뷰 요청 후 승인 → 다음 Phase 착수
 
@@ -134,16 +136,15 @@
 
 ---
 
-## Phase 10 — 수동 Portal 배포 → CLI → Bicep IaC 이전
+## Phase 10 — 상위 조립 · GitHub Actions CI (축소)
 
 **대응 경로**: (AI-200 범위 밖 · 포트폴리오 완성도 부스터)
-**목표**: Phase 1~9 에서 **Azure Portal 로 수동 구축한 모든 리소스**를, 먼저 `az` CLI 명령어 시퀀스로 재현한 뒤, 그 위에 Bicep 모듈을 얹어 "수동 → 스크립트 → 선언형 IaC" 라는 3단 스토리를 완결한다.
+**목표**: Phase 1~9 각자가 보유한 `infra/phases/0N-*/main.bicep` 들을 `infra/main.bicep` 에서 상위 조립하고, GitHub Actions 에서 `bicep what-if` → `az deployment sub create` 를 자동 실행하는 CI 를 구축.
 
-- **10-A**: 각 Phase 별 Portal 작업을 `az` CLI 블록으로 재작성 (`docs/learning-paths/10-iac-migration.md`)
-- **10-B**: CLI → Bicep 모듈화 (리소스 그룹 단위 `infra/modules/*.bicep` + `main.bicep` 조립)
-- **10-C**: `bicep what-if` → `az deployment group create` 로 Phase 1~9 전체 재배포 가능 검증
-- **10-D**: GitHub Actions workflow 로 CI 자동화(선택)
+- **10-A**: `infra/main.bicep` (subscription 스코프) 에서 각 Phase main.bicep 을 `module` 로 import. `infra/envs/dev.bicepparam` 단일 파라미터 파일로 통합
+- **10-B**: `.github/workflows/infra-ci.yml` — PR 에서 `bicep build` + `what-if`, main 머지 시 `az deployment sub create`. OIDC 기반 federated credential 사용(시크릿 없음)
+- **10-C**: 문서화 — `docs/learning-paths/10-iac-migration.md` 에 상위 조립 다이어그램, what-if 결과 예시, 롤백 전략
 
-**Why:** 자격증 교육 자료로서 "Portal vs 코드" 대비가 강력한 학습 포인트. 또한 실무 관점에서 "재현 가능성"을 입증.
+**Why:** Phase 1~9 에서 이미 Bicep 을 쓰기 때문에 "수동→IaC 전환" 스토리는 불필요. 대신 **여러 Phase 를 한 번에 파괴·재생성 가능한 포트폴리오 쇼케이스**로 가치가 이동.
 
-**산출물**: `docs/learning-paths/10-iac-migration.md`, `infra/modules/*.bicep`, `infra/main.bicep`, `infra/envs/dev.bicepparam`
+**산출물**: `infra/main.bicep`, `infra/envs/dev.bicepparam`, `.github/workflows/infra-ci.yml`, `docs/learning-paths/10-iac-migration.md`

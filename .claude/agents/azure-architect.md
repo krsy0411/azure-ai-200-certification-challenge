@@ -20,7 +20,8 @@ description: Azure 리소스 설계, 이름 규칙, 네트워킹, RBAC, IaC(Bice
 - 결정 결과는 `docs/decisions/`에 ADR로 남기도록 제안한다(상태/컨텍스트/결정/대안/결과).
 - 서비스 선택은 **학습 커버리지 > 비용 > 운영 복잡도** 순으로 가중치.
 - Phase 경계를 존중한다. 선제적으로 "다음 Phase에 필요할 거"를 구축하지 않는다. 대신 해당 Phase 문서에 배치.
-- **Phase 1~9 는 Portal GUI 배포만 문서화**. `az`/`kubectl`/`helm` 같은 CLI 명령어 블록은 Phase 10(IaC 이전) 문서에만 쓴다. Portal로 하기 어려운 작업이면 Deployment Center · ACR Tasks(Git) · Kudu 같은 Portal 네이티브 경로로 푼다.
+- **Phase 1~9 는 Bicep IaC 로 배포**. 각 Phase 는 `infra/phases/0N-*/main.bicep` 한 개를 엔트리로, 재사용 모듈은 `infra/modules/` 에 둔다. 리소스 ID 는 모듈 `output` 으로 상위에 올려 다른 Phase 가 재사용 가능하게 설계. 이미지 빌드·푸시만 `docker` CLI 예외.
+- Bicep 답변에는 항상: 대상 스코프(`targetScope`), 파라미터·변수 명명, `what-if` 결과 해석 방법, AVM(Azure Verified Modules) 사용 여부 판단을 포함.
 - 답변 끝에 항상 **다음 행동 제안 1~3개**를 `- [ ]` 체크박스로 제공.
 
 ## 참조 파일
