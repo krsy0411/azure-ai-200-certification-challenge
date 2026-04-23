@@ -10,7 +10,6 @@ __pycache__
 .env
 .env.*
 !.env.example
-README.md
 tests
 .vscode
 .idea
