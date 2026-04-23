@@ -424,7 +424,11 @@ az resource list -g "$RG" --resource-type "Microsoft.Web/serverFarms" -o table
 
 ## 함정 · 교훈 (배포 후 기록)
 
-- (배포 후 실제 발생한 이슈를 여기에 기록)
+- **Internal ingress 는 외부에서 "연결 거부" 가 아니라 `404` 로 응답한다** — `curl https://<app>.internal.<env>.azurecontainerapps.io/healthz` 가 DNS 는 resolve 되고(Traffic Manager → Env 정적 IP 까지는 모두 public) TCP 핸드셰이크도 성공. 다만 ACA 엣지 라우터가 "해당 hostname 은 외부 공개 대상이 아니다" 로 판단해 HTTP 404 로 거부. "404 가 나니 앱이 죽었나?" 로 오인하기 쉬움. 실제로는 **격리가 정상 동작 중인 증거**. 내부 도달성은 로그의 요청 source IP (`100.100.0.0/16` = ACA Env 내부 VNet) 로만 확증 가능.
+- **`what-if` 의 AcrPull `Unsupported` 는 Phase 1/2 공통 노이즈** — UAMI 의 `principalId` 가 배포 시점에 생성되므로 what-if 가 미리 resource ID 를 계산할 수 없어 `Unsupported` 진단이 뜸. `reference(...).principalId` 를 쓰는 role assignment 는 모든 Phase 에서 이 패턴. 실제 배포에서는 정상 생성됨.
+- **Container App 의 KEDA scale rule metadata 는 문자열 맵** — `concurrentRequests: 30` (숫자) 로 넣으면 Bicep 컴파일은 통과해도 배포 시 `InvalidTemplate` 로 실패. `string(httpConcurrency)` 로 감싸야 함. 같은 규칙이 CPU/메모리 스케일 rule, Service Bus queueLength 등 **모든 KEDA metadata** 에 적용.
+- **`cpu` 는 Bicep 측에서 문자열로 받고 삽입 직전 `json()` 으로 number 캐스팅** — `Microsoft.App/containerApps` 스키마는 `resources.cpu` 를 `number` (0.25, 0.5, 1.0) 로 요구. 하지만 Bicep 파라미터를 number 로 선언하면 `0.5` 가 내부적으로 `0.5000000001` 등으로 직렬화될 위험. 문자열 파라미터 → `json(cpu)` 로 방어.
+- **Log Analytics `sharedKey` 는 반드시 `@secure()` output** — `listKeys().primarySharedKey` 를 평문 output 으로 뽑으면 `az deployment ... show` 결과에 그대로 노출. `@secure()` 로 선언하면 Bicep 런타임이 평문 직렬화를 막음. 이게 ACA Env 로 전달될 때에도 Azure 측이 "secret 은 secret 처리" 하는 힌트가 됨.
 
 ---
 
@@ -432,11 +436,11 @@ az resource list -g "$RG" --resource-type "Microsoft.Web/serverFarms" -o table
 
 - [x] Phase 2 Bicep 모듈 4개 + main.bicep/param 작성
 - [x] `az bicep build` 경고 없음
-- [ ] `az deployment group what-if` 로 변경 내역 검토
-- [ ] `az deployment group create` 로 Phase 2 배포 완료
-- [ ] `az containerapp revision list` 로 리비전 Healthy 확인
-- [ ] `az containerapp logs show` 로 /healthz 프로브 확인
-- [ ] Web 외부 URL 브라우저에서 채팅 동작 확인 (→ web → api internal 통신 증명)
-- [ ] API internal URL 은 외부 curl 로 도달 불가 확인
-- [ ] Phase 1 App Service · ASP 삭제 (정리 섹션 명령)
-- [ ] 본 문서 "함정 · 교훈" 에 실제 삽질 기록 추가
+- [x] `az deployment group what-if` 로 변경 내역 검토 (5 Create · 1 Unsupported(AcrPull 노이즈) · 4 Ignore(Phase 1 자원))
+- [x] `az deployment group create` 로 Phase 2 배포 완료 (`phase2-20260423-161132`, 3m28s, `Succeeded`)
+- [x] `az containerapp revision list` 로 리비전 Healthy 확인 (api/web 양쪽 active=true, traffic=100%, replica=1)
+- [x] `az containerapp logs show` 로 /healthz 프로브 확인 (10s 간격 readiness, 30s 간격 liveness 모두 200)
+- [x] Web 외부 URL 브라우저에서 채팅 동작 확인 (→ web → api internal 통신 증명)
+- [x] API internal URL 은 외부 curl 로 도달 불가 확인 (404 = ACA 엣지 거부, `100.100.0.0/16` source IP 로만 실제 도달 확인)
+- [x] Phase 1 App Service · ASP 삭제 (ACR 만 보존)
+- [x] 본 문서 "함정 · 교훈" 에 실제 삽질 기록 추가
