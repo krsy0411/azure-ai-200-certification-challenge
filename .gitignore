@@ -47,6 +47,9 @@ Thumbs.db
 *.tfstate.backup
 .terraform/
 *.bicep.generated.json
+# az bicep build 산출물 (같은 폴더에 main.json 등으로 생성)
+infra/**/*.json
+!infra/**/*.bicepparam.json
 
 # ---- Local AI / data dumps ----
 data/local/
