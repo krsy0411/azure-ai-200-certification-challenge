@@ -26,10 +26,11 @@
 - **일반 규칙**: `<리소스약어>-ai200challenge-<env>` 예) `rg-ai200challenge-dev`, `cae-ai200challenge-dev`, `kv-ai200challenge-dev`
 - **하이픈 금지 리소스**(ACR·Storage 등): `<약어>ai200challenge<env><2~4자 고유접미사>` 예) `acrai200challengedevXX`, `stai200challengedevXX`
 - **약어 표준**:
-  - `rg` 리소스 그룹 | `acr` Container Registry | `cae` ACA Environment | `aks` Kubernetes 클러스터
+  - `rg` 리소스 그룹 | `acr` Container Registry | `cae` ACA Environment | `ca` Container App | `aks` Kubernetes 클러스터
   - `cosmos` Cosmos DB | `pg` PostgreSQL | `redis` Managed Redis
   - `sb` Service Bus | `egt` Event Grid 토픽 | `func` Azure Functions | `st` Storage
-  - `kv` Key Vault | `ac` App Configuration | `ai` Application Insights | `law` Log Analytics Workspace
+  - `kv` Key Vault | `ac` App Configuration | `ai` Application Insights | `law` Log Analytics Workspace | `id` User-Assigned Managed Identity
+  - `app` App Service (Web App) | `asp` App Service Plan
 
 ## 기술 스택 (고정)
 
