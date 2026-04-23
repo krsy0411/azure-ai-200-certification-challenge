@@ -359,9 +359,11 @@ open "$WEB_URL"
 
 ## 함정 · 교훈 (배포 후 기록)
 
-- `pyproject.toml` 의 `readme = "README.md"` 필드 — Dockerfile 이 README.md 를 COPY 하지 않으면 hatchling 빌드 실패. `apps/api/.dockerignore` 에서 `README.md` 를 제외 목록에서 빼고, Dockerfile 에 `COPY README.md ./` 추가로 해결.
-- `az configure --defaults group=Test` 처럼 오염된 기본값이 있으면 `az acr login` 이 무관한 "Resource group 'Test' could not be found" 로 실패. `az configure --defaults group=''` 로 정리.
-- (추가 기록 예정)
+- **hatchling 빌드가 README.md 를 요구** — `apps/api/pyproject.toml` 의 `readme = "README.md"` 필드 때문에 Dockerfile 이 README.md 를 COPY 하지 않으면 `uv sync` 단계에서 `OSError: Readme file does not exist: README.md` 로 빌드 실패. `apps/api/.dockerignore` 에서 `README.md` 제외 목록을 삭제하고, Dockerfile 의 builder 스테이지에 `COPY README.md ./` 를 추가해야 정상 빌드.
+- **`az configure --defaults` 오염** — `az configure --defaults group=Test` 같은 과거 세션 잔재가 남아 있으면, 실제 RG 가 존재하더라도 `az acr login` 이 `Resource group 'Test' could not be found` 로 실패. 증상은 ACR 쪽 에러처럼 보이지만 원인은 CLI 기본값. `az configure --defaults group=''` 로 해제.
+- **ACR 생성 직후 첫 `az acr login` 실패, 재시도로 해결** — `az deployment sub create` 가 `Succeeded` 로 리턴된 직후에도 `az acr login` 이 `Could not connect to the registry login server` 로 실패하는 경우가 있음. DNS/백엔드 전파 지연으로 보이며, 1~2분 후 재시도 시 성공. 진단은 `az acr check-health -n <acr> --yes`, 확인은 `nslookup <acr>.azurecr.io`.
+- **`az acr show --query "{...}"` 가 nested 속성을 null 로 리턴** — `--query "{loginServer:properties.loginServer}"` 형식이 null 값을 반환해 "ACR 이 깨진 건가?" 로 오해하기 쉬움. 실제로는 스키마 차이 (최상위 `loginServer` / `provisioningState`) 때문. `--query` 생략하고 JSON 전체를 받으면 정상 값 확인 가능.
+- **`--platform linux/amd64` 는 필수, 옵션 아님** — Apple Silicon (arm64) 로컬에서 빌드한 이미지를 App Service Linux (amd64) 에서 돌리면 런타임 대신 `exec format error` 로 조용히 죽음. 빌드 시점에 platform 을 명시하는 습관.
 
 ---
 
@@ -372,8 +374,9 @@ open "$WEB_URL"
 - [x] FastAPI 로컬 smoke test 성공
 - [x] Next.js 타입 체크 · 프로덕션 빌드 성공
 - [x] Phase 1 Bicep 모듈 + main.bicep 작성
-- [ ] `docker build --platform linux/amd64` 후 `docker push` 로 `api:0.1.0`, `web:0.1.0` 푸시 완료
-- [ ] `az deployment sub what-if` 로 변경 내역 검토
-- [ ] `az deployment sub create` 로 Phase 1 배포 완료
-- [ ] `/healthz`, `/api/chat`, Web UI 스모크 테스트 3종 통과
-- [ ] 본 문서 "함정 · 교훈" 에 실제 삽질 기록 추가
+- [x] `docker build --platform linux/amd64` 후 `docker push` 로 `api:0.1.0`, `web:0.1.0` 푸시 완료
+- [x] `az deployment sub what-if` 로 변경 내역 검토
+- [x] `az deployment sub create` 로 Phase 1 배포 완료 (`phase1-20260423-140402`, `provisioningState: Succeeded`)
+- [x] `/healthz`, `/api/chat` 자동 스모크 테스트 통과 · Web `/` 200 OK
+- [x] Web UI 브라우저 육안 확인 (채팅 입력 → stub 응답 렌더링)
+- [x] 본 문서 "함정 · 교훈" 에 실제 삽질 기록 추가
