@@ -102,8 +102,24 @@ module uamiAcrPull '../../modules/role-assignment-acrpull.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
-// 3) AKS 클러스터
+// 3) UAMI → UAMI 자기자신에 Managed Identity Operator 역할 할당
+//    control plane 이 kubelet identity 를 orchestrate 하려면 이 역할이 필요.
+//    본 프로젝트는 같은 UAMI 를 control plane / kubelet 양쪽에 쓰므로 self 할당.
+// ---------------------------------------------------------------------------
+module uamiMiOperator '../../modules/role-assignment-mi-operator.bicep' = {
+  name: 'ra-mi-operator-aks-uami'
+  params: {
+    targetIdentityId: uami.outputs.id
+    targetIdentityName: uami.outputs.name
+    principalId: uami.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4) AKS 클러스터
 //    kubelet identity 를 위에서 만든 UAMI 로 주입 → 별도 --attach-acr 불필요
+//    control plane identity 도 같은 UAMI 사용
 // ---------------------------------------------------------------------------
 module aks '../../modules/aks-cluster.bicep' = {
   name: 'deploy-aks'
@@ -111,6 +127,7 @@ module aks '../../modules/aks-cluster.bicep' = {
     name: aksName
     location: location
     tags: commonTags
+    controlPlaneIdentityId: uami.outputs.id
     kubeletIdentityId: uami.outputs.id
     kubeletIdentityClientId: uami.outputs.clientId
     kubeletIdentityPrincipalId: uami.outputs.principalId
@@ -121,11 +138,11 @@ module aks '../../modules/aks-cluster.bicep' = {
     systemNodeCount: systemNodeCount
     kubernetesVersion: kubernetesVersion
   }
-  dependsOn: [ uamiAcrPull ]
+  dependsOn: [ uamiAcrPull, uamiMiOperator ]
 }
 
 // ---------------------------------------------------------------------------
-// 4) signed-in user 에게 AKS RBAC Cluster Admin 역할
+// 5) signed-in user 에게 AKS RBAC Cluster Admin 역할
 //    disableLocalAccounts=true 환경에서 kubectl 사용 가능하게 함
 // ---------------------------------------------------------------------------
 module aksAdmin '../../modules/role-assignment-aks-cluster-admin.bicep' = [for principalId in adminGroupObjectIDs: {

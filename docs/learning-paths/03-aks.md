@@ -40,14 +40,16 @@
 ```
 rg-ai200challenge-dev
 ├─ law-ai200challenge-dev                       (Phase 2 LAW, existing 참조)
-├─ id-ai200challenge-aks-dev                    (kubelet UAMI)
-│     └─ AcrPull on acrai200challengedev04      (Phase 1 ACR)
+├─ id-ai200challenge-aks-dev                    (control plane + kubelet UAMI, 공용)
+│     ├─ AcrPull on acrai200challengedev04      (Phase 1 ACR)
+│     └─ Managed Identity Operator on self      (control plane → kubelet 제어용, self 할당)
 ├─ aks-ai200challenge-dev                       (AKS 클러스터)
+│     ├─ identity.type=UserAssigned → id-ai200challenge-aks-dev (control plane)
+│     ├─ identityProfile.kubeletidentity → id-ai200challenge-aks-dev (kubelet)
 │     ├─ aadProfile: managed + enableAzureRBAC + tenantID
 │     ├─ disableLocalAccounts=true
 │     ├─ system nodepool × 2 (Standard_D2s_v3)
 │     ├─ networkProfile: Azure CNI Overlay (pod 10.244.0.0/16, svc 10.0.0.0/16)
-│     ├─ identityProfile.kubeletidentity → UAMI 위
 │     └─ addonProfile.omsagent → law-ai200challenge-dev  (Container Insights)
 │
 ├─ signed-in user
@@ -76,8 +78,9 @@ aks-ai200challenge-dev
 | `infra/phases/03-aks/main.bicep` | Phase 3 엔트리 (resourceGroup 스코프). Phase 1 ACR · Phase 2 LAW 를 네이밍 규칙으로 역산. |
 | `infra/phases/03-aks/main.bicepparam` | 리전·환경·acrSuffix + **민감값 env var 주입** (`AZURE_TENANT_ID`, `AKS_ADMIN_OBJECT_IDS`) |
 | `infra/phases/03-aks/k8s/api-deployment.yaml` | k8s 매니페스트 (Namespace/Deployment/Service/HPA). 이미지 경로는 `__ACR_LOGIN_SERVER__` 플레이스홀더 |
-| `infra/modules/aks-cluster.bicep` | AKS 클러스터 1개. aadProfile, Azure CNI Overlay, kubelet UAMI 주입, Container Insights |
+| `infra/modules/aks-cluster.bicep` | AKS 클러스터 1개. `identity.type=UserAssigned` (control plane) + `identityProfile.kubeletidentity` (kubelet), aadProfile, Azure CNI Overlay, Container Insights |
 | `infra/modules/role-assignment-aks-cluster-admin.bicep` | principalId 1개에 "AKS RBAC Cluster Admin" 역할 부여 (AKS 스코프) |
+| `infra/modules/role-assignment-mi-operator.bicep` | principal 에 "Managed Identity Operator" 역할 부여 (대상 UAMI 스코프). control plane UAMI 가 kubelet UAMI 를 orchestrate 할 권한. 본 프로젝트는 동일 UAMI self 할당 |
 | `infra/modules/user-assigned-identity.bicep` | **재사용** — UAMI |
 | `infra/modules/role-assignment-acrpull.bicep` | **재사용** — UAMI → ACR `AcrPull` |
 
@@ -125,7 +128,9 @@ resource law 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
 
 > **왜 ACR 은 `existing` 으로 잡지 않는가**: `acrName` 문자열만 있으면 모듈(`role-assignment-acrpull.bicep`) 안에서 existing 으로 참조하므로 상위 main 에선 중복 선언 불필요. LAW 는 `law.id` (resource ID) 를 AKS addon 에 넘겨야 해서 `existing` 이 필요.
 
-### 스텝 1 — kubelet UAMI
+### 스텝 1 — UAMI (control plane + kubelet 공용)
+
+AKS 는 **두 개의 identity** 를 사용한다 — control plane (Azure 리소스 조작) 과 kubelet (node 에서 ACR pull 등). 본 프로젝트는 단일 UAMI 를 양쪽에 모두 쓴다. 별도로 두 개를 만드는 것도 가능하지만 학습용 클러스터에서는 PASS.
 
 ```bicep
 module uami '../../modules/user-assigned-identity.bicep' = {
@@ -138,7 +143,7 @@ module uami '../../modules/user-assigned-identity.bicep' = {
 }
 ```
 
-> **왜 kubelet identity 에 UAMI 를 직접 주입하나**: `az aks create --attach-acr` 는 암묵적으로 UAMI 를 만들지만, Bicep 으로 그걸 재현하려면 결국 동일한 UAMI 를 선언해야 한다. 차라리 처음부터 UAMI 를 **먼저** 만들고 `identityProfile.kubeletidentity.resourceId` 로 명시 주입 → 재배포·drift 에 안정.
+> **왜 UAMI 인가**: `identityProfile.kubeletidentity` 로 custom kubelet identity 를 주입하려면 **AKS control plane 도 반드시 UserAssigned** 여야 한다. SystemAssigned 로 두면 실제 배포 시 `CustomKubeletIdentityOnlySupportedOnUserAssignedMSICluster` 로 거절. 따라서 control plane identity 에도 UAMI 를 쓸 수밖에 없고, 이왕이면 kubelet 과 공용으로 단일화.
 
 ### 스텝 2 — UAMI → ACR AcrPull (Phase 1/2 모듈 재사용)
 
@@ -152,14 +157,57 @@ module uamiAcrPull '../../modules/role-assignment-acrpull.bicep' = {
 }
 ```
 
-### 스텝 3 — AKS 클러스터 (Entra ID + Azure RBAC + Azure CNI Overlay)
+### 스텝 3 — UAMI 자기자신에 "Managed Identity Operator" 역할
+
+같은 UAMI 를 control plane + kubelet 양쪽에 쓸 때도 Azure 는 **control plane 이 kubelet identity 를 orchestrate 할 권한** 을 명시적으로 요구한다 — `Managed Identity Operator` (role id `f1a07417-d97a-45cb-824c-7a7467783830`). 동일 identity 라서 self role assignment 형태가 된다.
+
+```bicep
+// modules/role-assignment-mi-operator.bicep (발췌)
+var managedIdentityOperatorRoleId = 'f1a07417-d97a-45cb-824c-7a7467783830'
+
+resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-07-31-preview' existing = {
+  name: targetIdentityName
+}
+
+resource assignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(targetIdentityId, principalId, managedIdentityOperatorRoleId)
+  scope: identity
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', managedIdentityOperatorRoleId)
+    principalId: principalId
+    principalType: principalType
+  }
+}
+```
+
+```bicep
+// infra/phases/03-aks/main.bicep
+module uamiMiOperator '../../modules/role-assignment-mi-operator.bicep' = {
+  name: 'ra-mi-operator-aks-uami'
+  params: {
+    targetIdentityId: uami.outputs.id
+    targetIdentityName: uami.outputs.name
+    principalId: uami.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+```
+
+> **빼먹었을 때 어떻게 되나**: what-if 는 통과하지만 실제 `az deployment group create` 단계에서 AKS API 가 거절. 우리 프로젝트의 첫 실배포에서는 이 역할은 물론이고 control plane 을 `SystemAssigned` 로 둔 탓에 선행 게이트에서 `CustomKubeletIdentityOnlySupportedOnUserAssignedMSICluster` 로 먼저 실패했다. control plane → UAMI 전환 + 이 역할 할당을 한꺼번에 넣어야 통과.
+
+### 스텝 4 — AKS 클러스터 (Entra ID + Azure RBAC + Azure CNI Overlay)
 
 ```bicep
 // modules/aks-cluster.bicep (발췌)
 resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
   name: name
   location: location
-  identity: { type: 'SystemAssigned' }            // control plane identity
+  identity: {                                     // control plane identity = UAMI
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${controlPlaneIdentityId}': {}
+    }
+  }
   properties: {
     dnsPrefix: '${name}-dns'
     kubernetesVersion: empty(kubernetesVersion) ? null : kubernetesVersion
@@ -223,7 +271,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
 >
 > **`useAADAuth: 'true'` — 문자열** — Bicep 스키마상 omsagent config 는 모두 문자열 맵. `true` (bool) 로 넣으면 `InvalidTemplate`. KEDA metadata 와 같은 함정.
 
-### 스텝 4 — Cluster Admin 역할 할당 (for loop)
+### 스텝 5 — Cluster Admin 역할 할당 (for loop)
 
 `disableLocalAccounts=true` 환경에서는 Azure RBAC 역할 없이는 `kubectl` 도 안 된다. signed-in user (또는 팀) 에게 "AKS RBAC Cluster Admin" 역할을 클러스터 스코프로 부여.
 
@@ -435,6 +483,8 @@ az aks start \
 
 ## 함정 · 교훈 (배포 후 기록)
 
+- **custom kubelet identity 를 쓰려면 control plane 도 UAMI 여야 한다** — 첫 실배포에서 `CustomKubeletIdentityOnlySupportedOnUserAssignedMSICluster` 로 실패. 원인: AKS 문서의 "bring your own kubelet identity" 섹션에 기본 예제가 SystemAssigned control plane 기준으로 안내되어 있지만, `identityProfile.kubeletidentity` 를 명시적으로 주입하는 순간 control plane 은 반드시 UserAssigned 가 된다. Bicep 으로 이걸 바꾸려면 `identity.type = 'UserAssigned'` + `userAssignedIdentities: { '${id}': {} }` 블록이 필요. 추가로 control plane UAMI 가 kubelet UAMI 를 다룰 수 있도록 **Managed Identity Operator** (role id `f1a07417-d97a-45cb-824c-7a7467783830`) 를 부여해야 완성. 본 프로젝트는 단일 UAMI 공용이므로 self role assignment.
+- **what-if 는 위 제약을 잡지 못한다** — ARM 스키마/쿼터까지는 검증하지만 AKS RP 의 "custom kubelet identity + SystemAssigned 금지" 규칙은 실제 배포 시점에만 잡힌다. 즉 what-if 통과 = 배포 성공이 아님. 시험 관점 교훈: what-if 는 필요 조건이지 충분 조건이 아니다.
 - **koreacentral 의 `DSv5 Family` 기본 쿼터는 0** — 처음엔 `Standard_D2s_v5 × 2` 로 선언했다가 `az deployment group what-if` 단계의 Preflight 에서 `ErrCode_InsufficientVCPUQuota — requested 4, remaining 0 for family standardDSv5Family` 로 거절. 이게 해당 구독의 개인 계정에만 오는 이슈가 아니라 **대부분의 subscription 에서 koreacentral DSv5 기본 한도가 0** (DSv4/DSv3 는 10). 해결: `Standard_D2s_v3` 로 갈아탐 → DSv3 Family 쿼터 10 안에서 4 vCPU 사용. 시험 관점 교훈은 "region × family 별 기본 쿼터가 제각각 → 배포 전 `az vm list-usage -l <region>` 로 limit 확인 필수". what-if 가 ARM 스키마 검증 + Preflight 쿼터 체크까지 돌려 주므로, 본 배포 전에 반드시 통과시켜야 함.
 - **B-series 를 회피한 이유 정정** — 이전 문서 초안에 "B-series 는 ARM 제약" 이라 잘못 썼지만 B-series 는 Intel Burstable (x86). 실제 회피 이유는 **Burstable CPU credit 이 고갈되면 throttle 되어 AKS 학습용 메트릭/스케일 동작이 credit 잔량에 좌우** 되어 관측 결과가 일관되지 않게 보이는 것. DSv3 는 performance consistent.
 
