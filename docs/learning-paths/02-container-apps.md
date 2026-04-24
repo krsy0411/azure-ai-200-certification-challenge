@@ -68,21 +68,25 @@ rg-ai200challenge-dev
 
 ### 스텝 0 — 스코프와 파라미터
 
-Phase 1 에서 RG 가 이미 존재 → `targetScope = 'resourceGroup'`. `acrName` 은 Phase 1 outputs 에서 가져와 파라미터로 주입.
+Phase 1 에서 RG 가 이미 존재 → `targetScope = 'resourceGroup'`. Phase 1 의 ACR 은 이름을 파라미터로 직접 받지 않고, 같은 `projectId` / `environment` / `acrSuffix` 로부터 **네이밍 규칙으로 역산**한다. 이렇게 하면 bicepparam 에 ACR 고유 이름이 들어가지 않아 OSS 레포에 안전하게 커밋 가능하고, fork 하는 사람은 `acrSuffix` 하나만 바꾸면 자기 ACR 로 돌아간다.
 
 ```bicep
 // infra/phases/02-container-apps/main.bicep
 targetScope = 'resourceGroup'
 
-@description('Phase 1 에서 만든 ACR 의 이름 (loginServer 아님)')
-param acrName string
+@description('ACR 전역 유니크 접미사 (Phase 1 에서 쓴 값과 동일해야 같은 ACR 을 참조)')
+@minLength(2)
+@maxLength(4)
+param acrSuffix string
+
+var acrName = 'acr${projectId}${environment}${acrSuffix}'
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
   name: acrName
 }
 ```
 
-> **왜 `acrName` 만 받고 loginServer 는 `acr.properties.loginServer` 로 뽑는가**: Phase 2 단독 재현성 확보. Phase 1 outputs 를 파일로 저장하지 않아도, 네이밍 규칙으로 역산 가능한 `acrName` 만 있으면 Phase 2 가 돈다.
+> **왜 `acrName` 을 직접 받지 않고 `acrSuffix` 에서 derive 하나**: 네이밍 규칙 (`acr<projectId><env><suffix>`) 을 레포에 고정해두면 OSS reader 가 자기 값으로 fork 하기 쉽고, bicepparam 에 특정 사용자의 ACR 고유 이름이 노출되지 않는다. Phase 3 의 Log Analytics 참조도 같은 원리.
 
 ### 스텝 1 — Log Analytics Workspace
 

@@ -22,8 +22,10 @@ param environment string = 'dev'
 @description('프로젝트 식별자')
 param projectId string = 'ai200challenge'
 
-@description('Phase 1 에서 만든 ACR 의 이름 (acrLoginServer 아님)')
-param acrName string
+@description('ACR 전역 유니크 접미사 (Phase 1 에서 쓴 값과 동일해야 같은 ACR 을 참조)')
+@minLength(2)
+@maxLength(4)
+param acrSuffix string
 
 @description('ACA 에 배포할 이미지 태그 — Phase 1 과 같은 이미지 재사용')
 param imageTag string = '0.1.0'
@@ -33,6 +35,7 @@ param imageTag string = '0.1.0'
 @maxValue(730)
 param logRetentionDays int = 30
 
+var acrName = 'acr${projectId}${environment}${acrSuffix}'
 var lawName = 'law-${projectId}-${environment}'
 var uamiName = 'id-${projectId}-aca-${environment}'
 var caeName = 'cae-${projectId}-${environment}'
