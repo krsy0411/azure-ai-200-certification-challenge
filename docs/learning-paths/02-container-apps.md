@@ -432,6 +432,54 @@ az resource list -g "$RG" --resource-type "Microsoft.Web/serverFarms" -o table
 
 ---
 
+## MS Learn 경로 커버리지 — 사용 / 생략
+
+공식 경로: https://learn.microsoft.com/ko-kr/training/paths/deploy-manage-apps-azure-container-apps/ (3 모듈)
+
+### 모듈 1 — Azure Container Apps 에 컨테이너 배포
+
+| 영역 | 상태 | 비고 |
+|---|---|---|
+| Managed Environment 생성 + Log Analytics 연동 | ✓ | `cae-ai200challenge-dev` + `law-ai200challenge-dev` |
+| External ingress (public FQDN) | ✓ | web 앱 |
+| Internal ingress (Env 내부 only) | ✓ | api 앱 — 내부 통신 패턴 학습 |
+| UAMI 로 registry 인증 (`registries[].identity`) | ✓ | `id-ai200challenge-aca-dev` 공용 |
+| `--environment-variables` / env 주입 | ✓ | `API_BASE_URL` 을 api 의 internal FQDN 으로 결선 |
+| Consumption workload profile | ✓ | 단일 `Consumption` 프로파일 |
+| Dedicated workload profile (D4/E4 등) | ✗ | 비용·안정성 이점 없음. Consumption 으로 충분 |
+| Bring Your Own VNet (커스텀 VNet 주입) | ✗ | **Phase 8** Private Endpoint 계열로 이관 |
+| Custom domain + managed certificate | ✗ | 포트폴리오 범위 외 |
+
+### 모듈 2 — Container Apps 관리 (리비전·진단)
+
+| 영역 | 상태 | 비고 |
+|---|---|---|
+| Single Revision Mode | ✓ | Phase 2 기본값 |
+| readiness / liveness probe (HTTP) | ✓ | api `/healthz`, web `/` |
+| 로그 스트림 (`az containerapp logs show`) | ✓ | stdout/stderr → Log Analytics |
+| Container Insights 메트릭 (CPU/메모리) | ✓ | **Phase 9** 에서 Application Insights 와 함께 확장 |
+| Multiple Revision Mode + 트래픽 분할 | ✗ | **Phase 7** (백엔드 통합) 에서 Blue/Green 데모로 도입 예정 |
+| Dapr 통합 (service invocation, pub/sub) | ✗ | **Phase 7** 에서 Service Bus + Event Grid 로 직접 처리하므로 Dapr 층 불필요 |
+| Startup probe | ✗ | 현재 이미지는 기동 빨라 불필요. 필요 시 모듈에 추가 |
+| Secrets 관리 (`containerApp.properties.configuration.secrets`) | ✗ | **Phase 8** 에서 Key Vault + `secretref` 로 통합 |
+| Container App Jobs (schedule / event / manual) | ✗ | **Phase 7** 비동기 워커로 고려 대상 |
+
+### 모듈 3 — Container Apps 스케일
+
+| 영역 | 상태 | 비고 |
+|---|---|---|
+| HTTP concurrency 스케일 규칙 | ✓ | `concurrentRequests: 30`, 1~5 replicas |
+| `minReplicas=0` 콜드 스타트 | ✗ | 학습용 실시간성 위해 min=1 고정. Phase 7 워커에선 0 시도 여지 |
+| TCP scale rule | ✗ | HTTP 만 사용. AI-200 시험 단골이지만 본 프로젝트 워크로드는 HTTP 전용 |
+| CPU / Memory scale rule | ✗ | HTTP concurrency 로 일관 |
+| KEDA — Service Bus queue length | ✗ | **Phase 7** 에서 워커 스케일로 도입 예정 |
+| KEDA — Cron (시간 기반) | ✗ | 본 프로젝트 요구 없음 |
+| KEDA — Azure Storage Queue / Event Hubs | ✗ | 본 프로젝트는 Service Bus + Event Grid 조합 |
+
+> **Phase 2 DoD 는 "Deploy + Manage 기본 + HTTP Scale"** 로 한정. Multiple Revision · Dapr · 다종 KEDA 는 Phase 7 (백엔드 통합) 에서 재방문.
+
+---
+
 ## 체크리스트
 
 - [x] Phase 2 Bicep 모듈 4개 + main.bicep/param 작성

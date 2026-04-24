@@ -367,6 +367,41 @@ open "$WEB_URL"
 
 ---
 
+## MS Learn 경로 커버리지 — 사용 / 생략
+
+공식 경로: https://learn.microsoft.com/ko-kr/training/paths/implement-container-app-hosting-azure/
+
+### ACR (Container Registry 저장·관리 모듈)
+
+| 영역 | 상태 | 비고 |
+|---|---|---|
+| Basic SKU 생성 | ✓ | `modules/acr.bicep`, `adminUserEnabled:false` |
+| 이미지 푸시 · 태깅 전략 | ✓ | `0.1.0` semver 로 시작, 멀티스테이지 빌드 |
+| Managed Identity 기반 pull | ✓ | Web App 시스템 MI + AcrPull (Phase 2/3 에서 UAMI 패턴으로 확장) |
+| Premium SKU · geo-replication | ✗ | 단일 리전 학습용이라 Basic 로 충분 |
+| ACR Tasks (클라우드 이미지 빌드) | ✗ | 로컬 `docker build` 로 대체 — Phase 10 GitHub Actions 에 빌드 잡 추가 여지 |
+| Content trust · 이미지 서명 | ✗ | Premium 전용 기능이라 비용·범위 초과 |
+| Scope maps · registry tokens | ✗ | MI 단일 인증 모델 유지. 토큰은 CI 없이 필요 없음 |
+| Private Endpoint (Private Link) | ✗ | **Phase 8** 보안 강화 시 도입 예정 |
+
+### App Service for Containers (앱 배포 모듈)
+
+| 영역 | 상태 | 비고 |
+|---|---|---|
+| Linux B1 Plan + `reserved:true` | ✓ | `modules/app-service-plan.bicep` |
+| `linuxFxVersion = DOCKER\|<acr>/<image>:<tag>` | ✓ | `modules/app-service-container.bicep` |
+| `acrUseManagedIdentityCreds` 로 키리스 pull | ✓ | System-assigned MI 기반 |
+| `appSettings` 로 런타임 포트·환경변수 | ✓ | `WEBSITES_PORT`, `API_BASE_URL` 등 |
+| Deployment slots (staging/blue-green) | ✗ | **Phase 2 ACA 의 리비전 + Phase 7 트래픽 분할** 로 대체 |
+| Autoscale (VM 기반) | ✗ | **Phase 2 ACA 의 HTTP concurrency 스케일** 로 대체 |
+| Custom domain + 관리형 인증서 | ✗ | 포트폴리오 범위 외 |
+| VNet integration · Hybrid Connections | ✗ | **Phase 8** Private Endpoint/VNet 모델로 이관 |
+| Startup command · Docker compose multi-container | ✗ | 단일 컨테이너 이미지 기준 |
+
+> **Phase 1 은 "App Service 로 컨테이너 호스팅이 가능함" 을 보여주는 교육 산출물**. Phase 2 가 안정화되면 Phase 1 의 App Service/ASP 는 삭제되지만, ACR 과 Bicep 모듈·문서는 계속 보존된다.
+
+---
+
 ## 체크리스트
 
 - [x] `apps/api/Dockerfile` 멀티스테이지 (uv 기반)
