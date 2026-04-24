@@ -18,6 +18,6 @@ param aadTenantId = readEnvironmentVariable('AZURE_TENANT_ID', '00000000-0000-00
 param adminGroupObjectIDs = split(readEnvironmentVariable('AKS_ADMIN_OBJECT_IDS', '00000000-0000-0000-0000-000000000000'), ',')
 param adminPrincipalType = 'User'
 
-param systemNodeVmSize = 'Standard_D2s_v5'
+param systemNodeVmSize = 'Standard_D2s_v3'
 param systemNodeCount = 2
 param kubernetesVersion = ''

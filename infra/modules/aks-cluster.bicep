@@ -35,8 +35,8 @@ param aadTenantId string
 @description('cluster admin 으로 등록할 AAD objectId 배열 (개인 계정 또는 그룹 ID)')
 param adminGroupObjectIDs array = []
 
-@description('system 노드 VM 크기')
-param systemNodeVmSize string = 'Standard_D2s_v5'
+@description('system 노드 VM 크기. 기본값은 DSv3 Family (koreacentral 기본 쿼터가 있는 가장 보수적인 선택)')
+param systemNodeVmSize string = 'Standard_D2s_v3'
 
 @description('system 노드 수')
 @minValue(1)

@@ -11,7 +11,7 @@
 ## 이 프로젝트에서의 적용
 
 - **보조 클러스터 포지셔닝**: Phase 2 ACA 가 "메인 호스팅" 이고, AKS 는 **같은 api 이미지를 Kubernetes 네이티브로도 돌려 본다**는 학습용 보조 클러스터. 외부 공개하지 않고 ClusterIP + `kubectl port-forward` 로만 검증 → 비용/공격면 축소.
-- **system 노드 풀 `Standard_D2s_v5` × 2**: AKS 권장 최소 SKU (B-series 는 ARM 제약·Burstable 엔진 이슈 있음). 별도 user 풀 없이 system 풀에서 워크로드도 돌림.
+- **system 노드 풀 `Standard_D2s_v3` × 2**: AKS 권장 최소(2 vCPU, 8 GiB) 충족. koreacentral 구독의 **기본 쿼터가 `DSv3 Family` 에 10 vCPU 할당**되어 있어 쿼터 상향 요청 없이 바로 배포 가능. DSv5 는 기본 쿼터 0 이므로 회피. B-series 는 Burstable (CPU credit 방식) 이라 AKS 학습 중 메트릭/스케일 동작이 credit 고갈 여부에 좌우돼 관측 결과가 왜곡되므로 회피. 별도 user 풀 없이 system 풀에서 워크로드도 돌림.
 - **Entra ID + Azure RBAC, 로컬 계정 disable** — "AI-200 시험 출제 1순위" 패턴. 클러스터 인증을 전적으로 Azure AD 로 위임 → 별도 kubeconfig 관리 불필요.
 - **kubelet identity 를 UAMI 로 주입**: ACR pull 을 kubelet 이 해결. `az aks update --attach-acr` (암묵적 identity 생성) 대신, Bicep 레벨에서 UAMI + AcrPull 역할 할당을 명시해 재배포 안전.
 - **Container Insights 애드온으로 Phase 2 LAW 재사용**: 새 LAW 를 만들지 않고 `law-ai200challenge-dev` 를 그대로 사용 → 로그 싱크 단일화.
@@ -24,7 +24,7 @@
 |---|---|---|
 | User-Assigned MI | kubelet identity | `id-ai200challenge-aks-dev` |
 | AKS 클러스터 | Entra ID + Azure RBAC | `aks-ai200challenge-dev` |
-| AKS system nodepool | `Standard_D2s_v5` × 2 | (Azure CNI Overlay) |
+| AKS system nodepool | `Standard_D2s_v3` × 2 | (Azure CNI Overlay) |
 | Role — `AcrPull` | UAMI → Phase 1 ACR | |
 | Role — `Azure Kubernetes Service RBAC Cluster Admin` | signed-in user → AKS | |
 | Container Insights 애드온 | `omsagent` → Phase 2 LAW | `law-ai200challenge-dev` |
@@ -45,7 +45,7 @@ rg-ai200challenge-dev
 ├─ aks-ai200challenge-dev                       (AKS 클러스터)
 │     ├─ aadProfile: managed + enableAzureRBAC + tenantID
 │     ├─ disableLocalAccounts=true
-│     ├─ system nodepool × 2 (Standard_D2s_v5)
+│     ├─ system nodepool × 2 (Standard_D2s_v3)
 │     ├─ networkProfile: Azure CNI Overlay (pod 10.244.0.0/16, svc 10.0.0.0/16)
 │     ├─ identityProfile.kubeletidentity → UAMI 위
 │     └─ addonProfile.omsagent → law-ai200challenge-dev  (Container Insights)
@@ -178,7 +178,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
         name: 'system'
         mode: 'System'
         count: systemNodeCount                    // 2
-        vmSize: systemNodeVmSize                  // Standard_D2s_v5
+        vmSize: systemNodeVmSize                  // Standard_D2s_v3
         osType: 'Linux'
         osSKU: 'Ubuntu'
         type: 'VirtualMachineScaleSets'
@@ -342,7 +342,7 @@ az aks get-credentials \
 kubectl get nodes -o wide
 ```
 
-기대: system 노드 2 개가 `Ready`. VM size `Standard_D2s_v5`. 최초 `kubectl` 명령에서 **device code flow** 가 뜰 수 있음 → 브라우저에서 인증 완료 후 다시 돌아오면 성공.
+기대: system 노드 2 개가 `Ready`. VM size `Standard_D2s_v3`. 최초 `kubectl` 명령에서 **device code flow** 가 뜰 수 있음 → 브라우저에서 인증 완료 후 다시 돌아오면 성공.
 
 ### 2) k8s 매니페스트 배포 (sed 로 ACR loginServer 치환)
 
@@ -435,7 +435,8 @@ az aks start \
 
 ## 함정 · 교훈 (배포 후 기록)
 
-- (TBD — 실제 배포 후 기록)
+- **koreacentral 의 `DSv5 Family` 기본 쿼터는 0** — 처음엔 `Standard_D2s_v5 × 2` 로 선언했다가 `az deployment group what-if` 단계의 Preflight 에서 `ErrCode_InsufficientVCPUQuota — requested 4, remaining 0 for family standardDSv5Family` 로 거절. 이게 해당 구독의 개인 계정에만 오는 이슈가 아니라 **대부분의 subscription 에서 koreacentral DSv5 기본 한도가 0** (DSv4/DSv3 는 10). 해결: `Standard_D2s_v3` 로 갈아탐 → DSv3 Family 쿼터 10 안에서 4 vCPU 사용. 시험 관점 교훈은 "region × family 별 기본 쿼터가 제각각 → 배포 전 `az vm list-usage -l <region>` 로 limit 확인 필수". what-if 가 ARM 스키마 검증 + Preflight 쿼터 체크까지 돌려 주므로, 본 배포 전에 반드시 통과시켜야 함.
+- **B-series 를 회피한 이유 정정** — 이전 문서 초안에 "B-series 는 ARM 제약" 이라 잘못 썼지만 B-series 는 Intel Burstable (x86). 실제 회피 이유는 **Burstable CPU credit 이 고갈되면 throttle 되어 AKS 학습용 메트릭/스케일 동작이 credit 잔량에 좌우** 되어 관측 결과가 일관되지 않게 보이는 것. DSv3 는 performance consistent.
 
 ---
 
