@@ -50,7 +50,12 @@ rg-ai200challenge-dev
 │     ├─ disableLocalAccounts=true
 │     ├─ system nodepool × 2 (Standard_D2s_v3)
 │     ├─ networkProfile: Azure CNI Overlay (pod 10.244.0.0/16, svc 10.0.0.0/16)
-│     └─ addonProfile.omsagent → law-ai200challenge-dev  (Container Insights)
+│     ├─ addonProfile.omsagent (ama-logs DaemonSet, useAADAuth=true)
+│     └─ DCRA "ContainerInsightsExtension" → MSCI-koreacentral-aks-... (cluster extension)
+│
+├─ MSCI-koreacentral-aks-ai200challenge-dev     (Container Insights DCR)
+│     ├─ kind=Linux, enableContainerLogV2=true
+│     └─ destinations.logAnalytics → law-ai200challenge-dev
 │
 ├─ signed-in user
 │     └─ RBAC: "Azure Kubernetes Service RBAC Cluster Admin" on aks  (for loop)
@@ -78,7 +83,8 @@ aks-ai200challenge-dev
 | `infra/phases/03-aks/main.bicep` | Phase 3 엔트리 (resourceGroup 스코프). Phase 1 ACR · Phase 2 LAW 를 네이밍 규칙으로 역산. |
 | `infra/phases/03-aks/main.bicepparam` | 리전·환경·acrSuffix + **민감값 env var 주입** (`AZURE_TENANT_ID`, `AKS_ADMIN_OBJECT_IDS`) |
 | `infra/phases/03-aks/k8s/api-deployment.yaml` | k8s 매니페스트 (Namespace/Deployment/Service/HPA). 이미지 경로는 `__ACR_LOGIN_SERVER__` 플레이스홀더 |
-| `infra/modules/aks-cluster.bicep` | AKS 클러스터 1개. `identity.type=UserAssigned` (control plane) + `identityProfile.kubeletidentity` (kubelet), aadProfile, Azure CNI Overlay, Container Insights |
+| `infra/modules/aks-cluster.bicep` | AKS 클러스터 1개. `identity.type=UserAssigned` (control plane) + `identityProfile.kubeletidentity` (kubelet), aadProfile, Azure CNI Overlay, Container Insights addon |
+| `infra/modules/aks-container-insights.bicep` | Container Insights 데이터 경로. DCR (`MSCI-<region>-<cluster>`, `enableContainerLogV2=true`) + DCRA (`ContainerInsightsExtension`, cluster scope). addon 만으로는 LAW 로 데이터가 흐르지 않아 명시 필요 |
 | `infra/modules/role-assignment-aks-cluster-admin.bicep` | principalId 1개에 "AKS RBAC Cluster Admin" 역할 부여 (AKS 스코프) |
 | `infra/modules/role-assignment-mi-operator.bicep` | principal 에 "Managed Identity Operator" 역할 부여 (대상 UAMI 스코프). control plane UAMI 가 kubelet UAMI 를 orchestrate 할 권한. 본 프로젝트는 동일 UAMI self 할당 |
 | `infra/modules/user-assigned-identity.bicep` | **재사용** — UAMI |
@@ -308,6 +314,75 @@ module aksAdmin '../../modules/role-assignment-aks-cluster-admin.bicep' = [for p
 
 > **왜 `aadProfile.adminGroupObjectIDs` 만으로는 부족한가**: `adminGroupObjectIDs` 는 클러스터 인증(kubeconfig 발급) 레벨의 "AAD 그룹 admin" 이지, Azure RBAC 역할이 아니다. `enableAzureRBAC=true` 환경에서는 **둘 다 필요** — AAD 로 인증되더라도 Azure RBAC 역할이 없으면 `kubectl get nodes` 가 403. 그래서 같은 objectId 를 둘 다에 주입.
 
+### 스텝 6 — Container Insights 데이터 경로 (DCR + DCRA)
+
+**가장 직관에 어긋나는 함정**. 클러스터에 `addonProfiles.omsagent` 만 켜면 데이터 플레인(ama-logs DaemonSet) 만 기동되고, 정작 **LAW 로 데이터를 보낼 경로**(DCR + DCRA) 는 자동 생성되지 않는다. 결과: 파드는 모두 Running, agent 로그도 정상, KQL `ContainerLogV2 | summarize count()` 는 0행.
+
+`az aks enable-addons -a monitoring --workspace-resource-id ...` CLI 는 이 두 리소스를 자동 생성해 주지만, 순수 Bicep 으로 `addonProfiles.omsagent` 만 선언하면 자동 트리거가 작동하지 않는다. 따라서 IaC 일관성을 위해 **DCR + DCRA 를 명시적으로 모듈화**.
+
+```bicep
+// modules/aks-container-insights.bicep (발췌)
+resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' existing = {
+  name: aksClusterName
+}
+
+resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
+  name: name                                   // MSCI-<location>-<clusterName>
+  location: location
+  kind: 'Linux'
+  properties: {
+    dataSources: {
+      extensions: [
+        {
+          name: 'ContainerInsightsExtension'
+          extensionName: 'ContainerInsights'
+          streams: [ 'Microsoft-ContainerInsights-Group-Default' ]
+          extensionSettings: {
+            dataCollectionSettings: { enableContainerLogV2: true }
+          }
+        }
+      ]
+    }
+    destinations: {
+      logAnalytics: [
+        { name: 'la-workspace', workspaceResourceId: logAnalyticsWorkspaceId }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: [ 'Microsoft-ContainerInsights-Group-Default' ]
+        destinations: [ 'la-workspace' ]
+      }
+    ]
+  }
+}
+
+resource dcra 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
+  name: 'ContainerInsightsExtension'           // 표준 이름
+  scope: aks                                    // cluster extension 으로 부착
+  properties: {
+    dataCollectionRuleId: dcr.id
+    description: 'associates dataCollectionRule to the AKS'
+  }
+}
+```
+
+```bicep
+// infra/phases/03-aks/main.bicep
+module aksCi '../../modules/aks-container-insights.bicep' = {
+  name: 'deploy-aks-container-insights'
+  params: {
+    name: 'MSCI-${location}-${aks.outputs.name}'    // CLI 와 동일 패턴
+    location: location
+    tags: commonTags
+    logAnalyticsWorkspaceId: law.id
+    aksClusterName: aks.outputs.name                // aks 모듈에 의존
+  }
+}
+```
+
+> **이름을 표준 패턴(`MSCI-<region>-<cluster>`) 으로 맞추는 이유**: 만약 누가 먼저 CLI 로 addon 을 enable 했다면 같은 이름의 DCR 이 이미 존재할 수 있다. 동일 이름으로 Bicep 이 선언하면 멱등 업데이트(태그/스키마 덮어쓰기) 로 흡수돼 충돌 없이 IaC 소유권을 가져갈 수 있다. 본 프로젝트도 정확히 이 경로 — A) CLI 로 우선 검증 → B) Bicep 으로 동등 재현 흡수 — 를 거쳤다.
+
 ---
 
 ## 이미지 준비
@@ -436,19 +511,38 @@ kill $PF_PID
 
 ### 5) Container Insights 로그 (Phase 2 LAW 에 함께 적재)
 
+먼저 데이터 경로(DCR + DCRA) 가 살아 있는지 확인. 없으면 ama-logs 가 떠도 LAW 로 흐르지 않는다.
+
+```bash
+# DCR 존재 확인
+az monitor data-collection rule list -g rg-ai200challenge-dev \
+  --query "[?starts_with(name,'MSCI-')].{name:name}" -o table
+
+# DCRA 가 클러스터에 부착됐는지 확인
+CLUSTER_ID=$(az aks show -g rg-ai200challenge-dev -n aks-ai200challenge-dev --query id -o tsv)
+az monitor data-collection rule association list --resource "$CLUSTER_ID" -o table
+```
+
+기대: DCR 1개 (`MSCI-koreacentral-aks-ai200challenge-dev`), DCRA 1개 (`ContainerInsightsExtension`).
+
 ```bash
 # 1~2 분 후 LAW 에 데이터 도달
 LAW_ID=$(az monitor log-analytics workspace show \
   -g rg-ai200challenge-dev -n law-ai200challenge-dev \
   --query customerId -o tsv)
 
+# 먼저 행 수만 빠르게 (DCR 누락 시 항상 0)
+az monitor log-analytics query --workspace "$LAW_ID" \
+  --analytics-query "ContainerLogV2 | where TimeGenerated > ago(15m) | summarize count()" -o table
+
+# 실제 로그
 az monitor log-analytics query \
   --workspace "$LAW_ID" \
   --analytics-query "ContainerLogV2 | where PodNamespace == 'ai200' | project TimeGenerated, PodName, ContainerName, LogMessage | top 10 by TimeGenerated desc" \
   -o table
 ```
 
-기대: ai200 네임스페이스 pod 의 stdout 로그가 LAW 의 `ContainerLogV2` 테이블에 적재되어 있음.
+기대: ai200 네임스페이스 pod 의 stdout 로그가 LAW 의 `ContainerLogV2` 테이블에 적재되어 있음. **0행이면 DCRA 부재 확정** → 함정·교훈 섹션의 DCR 항목 참고.
 
 ### DoD
 
@@ -487,6 +581,8 @@ az aks start \
 - **what-if 는 위 제약을 잡지 못한다** — ARM 스키마/쿼터까지는 검증하지만 AKS RP 의 "custom kubelet identity + SystemAssigned 금지" 규칙은 실제 배포 시점에만 잡힌다. 즉 what-if 통과 = 배포 성공이 아님. 시험 관점 교훈: what-if 는 필요 조건이지 충분 조건이 아니다.
 - **koreacentral 의 `DSv5 Family` 기본 쿼터는 0** — 처음엔 `Standard_D2s_v5 × 2` 로 선언했다가 `az deployment group what-if` 단계의 Preflight 에서 `ErrCode_InsufficientVCPUQuota — requested 4, remaining 0 for family standardDSv5Family` 로 거절. 이게 해당 구독의 개인 계정에만 오는 이슈가 아니라 **대부분의 subscription 에서 koreacentral DSv5 기본 한도가 0** (DSv4/DSv3 는 10). 해결: `Standard_D2s_v3` 로 갈아탐 → DSv3 Family 쿼터 10 안에서 4 vCPU 사용. 시험 관점 교훈은 "region × family 별 기본 쿼터가 제각각 → 배포 전 `az vm list-usage -l <region>` 로 limit 확인 필수". what-if 가 ARM 스키마 검증 + Preflight 쿼터 체크까지 돌려 주므로, 본 배포 전에 반드시 통과시켜야 함.
 - **B-series 를 회피한 이유 정정** — 이전 문서 초안에 "B-series 는 ARM 제약" 이라 잘못 썼지만 B-series 는 Intel Burstable (x86). 실제 회피 이유는 **Burstable CPU credit 이 고갈되면 throttle 되어 AKS 학습용 메트릭/스케일 동작이 credit 잔량에 좌우** 되어 관측 결과가 일관되지 않게 보이는 것. DSv3 는 performance consistent.
+- **`addonProfiles.omsagent` 만으로는 LAW 에 데이터가 흐르지 않는다 — DCR + DCRA 도 명시 필수** — 가장 시간을 잡아먹은 함정. 클러스터·addon 모두 `enabled=true`, ama-logs DaemonSet 도 34시간째 Running 인데 `ContainerLogV2`/`KubePodInventory` 모두 7일 윈도우에서 **0행**. 원인: AMA 기반 Container Insights(`useAADAuth=true` 모드) 는 데이터 경로가 `agent → DCR → LAW` 로 분리돼 있고, 이 중 **DCR(어디로 보낼지) + DCRA(클러스터 ↔ DCR 연결)** 은 별도 리소스. `az aks enable-addons -a monitoring --workspace-resource-id ...` CLI 는 이 두 리소스를 자동 생성해 주지만, 순수 Bicep 의 `addonProfiles.omsagent` 만으로는 자동 생성이 트리거되지 않는다. 진단 절차: ① cluster scope 에 `az monitor data-collection rule association list --resource <CLUSTER_ID>` → DCRA 0개면 데이터 경로 끊김 확정. ② 임시 수습은 `az aks disable-addons -a monitoring` 후 `az aks enable-addons` 로 재활성화 (CLI 가 DCR + DCRA 생성). ③ 영구 수습은 `Microsoft.Insights/dataCollectionRules` + `Microsoft.Insights/dataCollectionRuleAssociations` 를 Bicep 으로 선언 — 본 프로젝트는 `modules/aks-container-insights.bicep` 으로 분리. DCR 이름을 `MSCI-<region>-<cluster>` 표준 패턴으로 맞추면 CLI 가 만든 기존 DCR 도 같은 이름으로 멱등 업데이트되어 충돌 없이 IaC 소유권을 흡수할 수 있다 (실측: 태그만 4개 추가되고 dataFlows/dataSources/destinations 는 동일).
+- **what-if 가 안 잡는 또 하나** — DCR 누락은 ARM/AAD 제약이 아니라 "Azure Monitor 의 의미적 누락" 이라 what-if 통과한다. 데이터가 LAW 에 도달했는지의 검증은 반드시 `az monitor log-analytics query "ContainerLogV2 | where TimeGenerated > ago(15m) | summarize count()"` 같은 KQL 으로 직접 확인해야 한다.
 
 ---
 
@@ -529,6 +625,7 @@ az aks start \
 | 영역 | 상태 | 비고 |
 |---|---|---|
 | Container Insights 애드온 (omsagent) | ✓ | `addonProfiles.omsagent` → Phase 2 LAW 재사용, `useAADAuth: 'true'` |
+| AMA 데이터 경로 (DCR + DCRA) | ✓ | `modules/aks-container-insights.bicep` — addon 만으로 부족 (Phase 3 함정), `enableContainerLogV2: true` 명시 |
 | Pod 로그 (`kubectl logs`) + LAW `ContainerLogV2` | ✓ | 검증 5) KQL 쿼리로 확인 |
 | 리소스 진단 (`kubectl describe` / `get events`) | ✓ | 검증 3) 에서 사용 |
 | Azure Monitor 메트릭 (CPU / 메모리 / 네트워크) | ✓ | Container Insights 를 통해 자동 수집 |
@@ -545,14 +642,15 @@ az aks start \
 
 ## 체크리스트
 
-- [x] Phase 3 Bicep 모듈 2 개(`aks-cluster.bicep`, `role-assignment-aks-cluster-admin.bicep`) + main.bicep/param 작성
+- [x] Phase 3 Bicep 모듈 4 개(`aks-cluster.bicep`, `aks-container-insights.bicep`, `role-assignment-aks-cluster-admin.bicep`, `role-assignment-mi-operator.bicep`) + main.bicep/param 작성
 - [x] k8s 매니페스트 `api-deployment.yaml` 작성 (`__ACR_LOGIN_SERVER__` 플레이스홀더 + sed 치환 패턴)
 - [x] `az bicep build` 경고 없음 (`az bicep build-params` 로 parametersJson + templateJson 클린 생성 확인)
-- [ ] `AZURE_TENANT_ID` / `AKS_ADMIN_OBJECT_IDS` env export 후 `az deployment group what-if` 검토
-- [ ] `az deployment group create` 로 Phase 3 배포 완료
-- [ ] `az aks get-credentials` 후 `kubectl get nodes` Ready × 2 확인 (AAD device code flow 경험)
-- [ ] `sed ... | kubectl apply -f -` 로 ai200 네임스페이스 배포, 2 pod Running
-- [ ] `kubectl port-forward svc/api 18000:8000` 후 `/healthz` 200 확인
-- [ ] Container Insights `ContainerLogV2` 에서 ai200 네임스페이스 로그 확인 (Phase 2 LAW 재사용 검증)
+- [x] `AZURE_TENANT_ID` / `AKS_ADMIN_OBJECT_IDS` env export 후 `az deployment group what-if` 검토
+- [x] `az deployment group create` 로 Phase 3 배포 완료 (DSv5 쿼터 → DSv3 갈아탐, control plane SystemAssigned → UserAssigned 전환)
+- [x] `az aks get-credentials` 후 `kubectl get nodes` Ready × 2 확인 (kubelogin convert-kubeconfig 로 device code flow 우회)
+- [x] `sed ... | kubectl apply -f -` 로 ai200 네임스페이스 배포, 2 pod Running
+- [x] `kubectl port-forward svc/api 18000:8000` 후 `/healthz` 200 확인
+- [x] Container Insights `ContainerLogV2` 에서 ai200 네임스페이스 로그 확인 (DCR + DCRA 명시 후 흐름 정상화)
+- [x] DCR + DCRA 를 Bicep 으로 IaC 흡수 (`aks-container-insights.bicep`), 동등 재배포 검증
 - [ ] `az aks stop` 으로 비용 절감 상태 전환
-- [ ] 본 문서 "함정 · 교훈" 에 실제 삽질 기록 추가
+- [x] 본 문서 "함정 · 교훈" 에 실제 삽질 기록 추가

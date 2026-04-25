@@ -155,6 +155,24 @@ module aksAdmin '../../modules/role-assignment-aks-cluster-admin.bicep' = [for p
 }]
 
 // ---------------------------------------------------------------------------
+// 6) Container Insights 데이터 경로 (DCR + DCRA)
+//    addonProfiles.omsagent 만으로는 LAW 로 데이터가 흐르지 않는다 (Phase 3 함정).
+//    DCR(어디로) + DCRA(누가 어디로) 를 명시적으로 선언해 IaC-only 재현성을 확보.
+//    이름은 CLI 가 자동생성할 때 사용하는 표준 패턴(MSCI-<region>-<cluster>) 과 동일하게
+//    맞춰서, 기존에 CLI 로 만들어 둔 DCR 이 있어도 같은 이름으로 멱등 업데이트되도록 한다.
+// ---------------------------------------------------------------------------
+module aksCi '../../modules/aks-container-insights.bicep' = {
+  name: 'deploy-aks-container-insights'
+  params: {
+    name: 'MSCI-${location}-${aks.outputs.name}'
+    location: location
+    tags: commonTags
+    logAnalyticsWorkspaceId: law.id
+    aksClusterName: aks.outputs.name
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 output kubeletIdentityId string = uami.outputs.id
@@ -162,4 +180,5 @@ output kubeletIdentityPrincipalId string = uami.outputs.principalId
 output aksName string = aks.outputs.name
 output aksFqdn string = aks.outputs.fqdn
 output aksNodeResourceGroup string = aks.outputs.nodeResourceGroup
+output containerInsightsDcrId string = aksCi.outputs.dcrId
 output getCredentialsCommand string = 'az aks get-credentials --resource-group ${resourceGroup().name} --name ${aks.outputs.name} --overwrite-existing'
