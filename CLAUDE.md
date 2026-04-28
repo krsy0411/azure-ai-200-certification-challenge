@@ -17,6 +17,12 @@
 4. **배포 방식 — Bicep IaC 우선.** Phase 1~9 의 모든 리소스 프로비저닝·구성은 **Bicep 모듈**로 선언하고, 각 Phase 는 단일 엔트리 `infra/phases/0N-*/main.bicep` 에서 모듈을 조립해 `az deployment group create` / `az deployment sub create` 로 배포한다. Portal GUI 는 스크린샷·교육 산출물이 아니라 **결과 확인용**으로만 사용한다. **예외 — 컨테이너 이미지 빌드·ACR 푸시**: IaC 로 선언할 수 없는 작업이므로 `docker build --platform linux/amd64` + `docker push` + `az acr login` CLI 를 각 Phase 문서의 "이미지 빌드·푸시" 하위에서 사용. **Phase 10** 은 Phase 1~9 의 `main.bicep` 을 `infra/main.bicep` 에 상위 조립하고 GitHub Actions CI 로 자동화하는 **축소된 범위**다.
 5. **실제 배포 실행은 사용자가 수행.** Claude 는 Bicep 모듈·파라미터·배포 명령어를 준비하고, 사용자가 `az deployment ... what-if` 로 검토 후 실제 배포를 실행한다. 문서의 "함정·교훈" 섹션은 배포 후 사용자/Claude 가 같이 채운다.
 6. **보안**: 시크릿은 Phase 8 이후 Key Vault + 관리형 ID가 표준. 그 전에는 `.env`를 쓰되 `.gitignore`로 반드시 제외.
+7. **작업 컨텍스트 영속화 — `docs/history.md`** (필수). 사용자는 컴퓨터를 자주 켜고 끄며 Claude Code 대화 컨텍스트가 자주 날아간다.
+   - **`docs/history.md`** 가 진행 중인 Phase·미해결 결정·다음 액션을 추적하는 living document.
+   - **갱신 트리거 — 사용자 명시 요청만**: "히스토리 갱신", "지금까지 정리해", "history 기록", "맥락 저장" 등. 작업 진행 중 자동 갱신 **금지**.
+   - **새 대화 시작 시 Claude 는 `docs/history.md` 를 먼저 읽어 맥락을 복원**한 뒤 사용자에게 한두 문장으로 "이어서 무엇을 할지" 제안.
+   - **갱신 시 최소 유지 섹션**: ① 현재 위치 ② 다음 액션 / 사용자 응답 대기 항목 ③ Phase 진행 요약 표. 자세한 내용은 각 `docs/learning-paths/0N-*.md` 로 위임하고 history.md 자체는 짧게 유지.
+   - **갱신 후에는 commit 하지 않는다** (사용자가 별도로 push 시점을 결정). 단, 사용자가 "커밋해" 라고 같이 요청하면 그때 커밋.
 
 ## Azure 리소스 네이밍 · 리전 규칙 (고정)
 
