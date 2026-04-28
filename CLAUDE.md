@@ -35,6 +35,14 @@
    - **새 대화 시작 시 Claude 는 `docs/history.md` 를 먼저 읽어 맥락을 복원**한 뒤 사용자에게 한두 문장으로 "이어서 무엇을 할지" 제안.
    - **갱신 시 최소 유지 섹션**: ① 현재 위치 ② 다음 액션 / 사용자 응답 대기 항목 ③ Phase 진행 요약 표. 자세한 내용은 각 `docs/learning-paths/0N-*.md` 로 위임하고 history.md 자체는 짧게 유지.
    - **갱신 후에는 commit 하지 않는다** (사용자가 별도로 push 시점을 결정). 단, 사용자가 "커밋해" 라고 같이 요청하면 그때 커밋.
+10. **Phase 진행 7-단계 워크플로우 — Skills 진입.** 각 Phase 작업은 ① 학습 경로 정독 → ② 사용자 결정 승인 → ③ 구현 → ④ lint → ⑤ CLI 검증 → ⑥ 사용자 GUI 검증 → ⑦ 자원 정리 의 7 단계로 진행한다. Claude/사용자는 다음 슬래시 커맨드로 단계를 진입:
+    - **`/phase-start <N>`** — 단계 1 + 2 (`phase-learning-fetcher` subagent 가 학습 경로 정독, main 이 결정 옵션 표 제시 후 사용자 승인 대기)
+    - **(단계 3 구현)** — 자유, Skill 외부. 단계 4 (lint) 는 PostToolUse hook 으로 자동 (`*.bicep`, `apps/api/src/**/*.py`)
+    - **`/phase-verify`** — 단계 5 (자원 / 권한 / 헬스 / 데이터 라운드트립 / KQL). 검증 종료 시 사용자에게 단계 6 진입 안내
+    - **(단계 6 GUI 검증)** — 사용자가 Portal·브라우저로 직접 수행. "GUI 검증 끝" / "정리해" 등 명시 메시지가 다음 단계 트리거
+    - **`/phase-cleanup`** — 단계 7 (§7 룰대로 phase-specific 자원만 정리, 공통 자원 보존)
+    - 단계 detail 은 `.claude/skills/phase-{start,verify,cleanup}/SKILL.md` 에. PreToolUse hook (`block-az-delete.sh`) 이 사용자 명시 정리 요청 마커 (`/phase-cleanup` 이 만드는 `.claude/cleanup-approved`) 없이는 `az ... delete` 차단.
+    - **자동 invoke 금지**: 세 Skill 모두 `disable-model-invocation: true`. 사용자 또는 Claude 가 명시적으로 슬래시 커맨드로 호출.
 
 ## Azure 리소스 네이밍 · 리전 규칙 (고정)
 
