@@ -7,7 +7,8 @@ PostgreSQL Flexible Server + pgvector data-plane store.
 - 모듈 2 단원 2 "pgvector 임베딩 저장 / 쿼리":
     halfvec(3072) + register_vector_async + <=> (cosine distance)
 - 모듈 3 단원 6 "연결 최적화":
-    내장 PgBouncer (port 6432) + 클라이언트 측 psycopg_pool.AsyncConnectionPool 이중 풀링
+    PgBouncer 는 Burstable B1ms 에서 미지원이라 생략.
+    클라이언트 측 psycopg_pool.AsyncConnectionPool 단일 풀링만 사용.
 
 설계 결정:
 - chunks_hnsw / chunks_ivf 두 테이블에 동일 데이터 적재 → 인덱스 종류별 정확한 비교 (결정 ④ a)
@@ -50,7 +51,7 @@ class PgSettings:
     def from_env(cls) -> PgSettings:
         return cls(
             host=os.environ["PG_HOST"],
-            port=int(os.environ.get("PG_PORT", "6432")),
+            port=int(os.environ.get("PG_PORT", "5432")),
             database=os.environ.get("PG_DATABASE", "kb"),
             user=os.environ["PG_USER"],
         )
@@ -67,10 +68,14 @@ class PgStore:
     # ---- 라이프사이클 ------------------------------------------------------
 
     async def open(self) -> None:
-        await self._ensure_pool()
+        # 부트스트랩을 풀 *밖*에서 먼저 — pool 의 _configure 가 register_vector_async 를 부르는데,
+        # cold-start PG 에는 vector type 이 아직 없어서 풀 connection 자체가 실패한다
+        # ('vector type not found in the database' → PoolTimeout). 부트스트랩이 CREATE EXTENSION
+        # vector 를 먼저 실행하도록 분리. 자세한 함정은 docs/learning-paths/05-postgresql.md.
         if not self._bootstrapped:
             await self._run_bootstrap()
             self._bootstrapped = True
+        await self._ensure_pool()
 
     async def close(self) -> None:
         if self._pool is not None:
@@ -122,12 +127,26 @@ class PgStore:
     # ---- 부트스트랩 -------------------------------------------------------
 
     async def _run_bootstrap(self) -> None:
+        # 풀(_configure 안의 register_vector_async) 을 거치지 않는 short-lived connection.
+        # CREATE EXTENSION vector 를 먼저 실행하기 위해 vector adapter 등록을 회피한다.
+        # 부트스트랩 SQL 은 DDL 텍스트만 보내므로 vector 어댑터가 필요 없다.
         sql = _BOOTSTRAP_SQL_PATH.read_text(encoding="utf-8")
-        pool = await self._ensure_pool()
-        async with pool.connection() as conn:
+        token = await self._get_fresh_token()
+        conn = await psycopg.AsyncConnection.connect(
+            host=self._s.host,
+            port=self._s.port,
+            dbname=self._s.database,
+            user=self._s.user,
+            password=token,
+            sslmode="require",
+            autocommit=False,
+        )
+        try:
             async with conn.cursor() as cur:
                 await cur.execute(sql)
             await conn.commit()
+        finally:
+            await conn.close()
 
     # ---- chunks 쓰기 ------------------------------------------------------
 

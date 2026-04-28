@@ -13,7 +13,7 @@ param aoaiSuffix = '04'
 param pgSuffix = '05'
 
 // Phase 5 새 이미지 (PgStore 포함). 실제 푸시 후 갱신.
-param imageTag = '0.5.0'
+param imageTag = '0.5.1'
 
 param pgDatabaseName = 'kb'
 param postgresVersion = '16'

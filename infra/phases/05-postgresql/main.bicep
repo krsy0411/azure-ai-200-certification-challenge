@@ -4,18 +4,15 @@
 // 결정 (history.md / 사전 협의):
 //   ① Phase 4 자원(cosmos / aoai) 은 existing 참조만 — 재배포 X. ACA api 의 envVars 에 PG 추가만 갱신.
 //   ② AAD admin 은 UAMI 단일 등록. 사용자 본인은 검증 시 임시 부여 후 회수.
-//   ③ 내장 PgBouncer 활성 (pgbouncer.enabled=true). 앱 측에서도 psycopg_pool 이중 풀링.
+//   ③ PgBouncer 는 Burstable B1ms 에서 미지원이라 활성 불가. 풀링은 클라이언트 측 psycopg_pool 만.
 //   ④ chunks_hnsw / chunks_ivf 두 테이블에 같은 데이터 적재 (앱 부트스트랩 SQL 에서) — Bicep 영향 없음.
 //
 // 생성 리소스 (rg-ai200challenge-<env>):
 //   - pg-ai200challenge-<env><suffix>           (Flexible Server, PG 16, B1ms, AAD-only)
 //       └ kb (DB)
 //   - administrators sub-resource               (UAMI → AAD admin)
-//   - configurations sub-resource (배치)
-//        ├ azure.extensions = VECTOR
-//        ├ pgbouncer.enabled = true
-//        ├ pgbouncer.pool_mode = transaction
-//        └ pgbouncer.default_pool_size = 50
+//   - configurations sub-resource
+//        └ azure.extensions = VECTOR
 //   - firewall rules
 //        ├ AllowAzureServices (0.0.0.0/0.0.0.0 의 특수 의미)
 //        └ <devClient> (사용자 IP — 검증 시 psql 접속용)
@@ -158,16 +155,16 @@ module pgDb '../../modules/postgres-database.bicep' = {
   ]
 }
 
-// ---- 4) Server parameters (vector extension + PgBouncer) --------------
+// ---- 4) Server parameters (vector extension) --------------------------
+// PgBouncer 는 Burstable 컴퓨트 티어에서 미지원이라 Phase 5 SKU (B1ms) 에서는 활성 불가
+// (`ServerParameterToCMSPgBouncerNotSupportedForBurstable`). 풀링은 클라이언트 측
+// psycopg_pool 만으로 처리하고, PG_PORT 는 5432 직결. 함정·교훈 / MS Learn 커버리지 표 참조.
 module pgServerConfig '../../modules/postgres-server-config.bicep' = {
   name: 'deploy-pg-server-config'
   params: {
     serverName: pgServer.outputs.name
     parameters: {
       'azure.extensions': 'VECTOR'
-      'pgbouncer.enabled': 'true'
-      'pgbouncer.pool_mode': 'transaction'
-      'pgbouncer.default_pool_size': '50'
     }
   }
   dependsOn: [
@@ -236,9 +233,9 @@ module apiApp '../../modules/container-app.bicep' = {
       AOAI_DEPLOYMENT_CHAT: 'gpt-4o-mini'
       AOAI_DEPLOYMENT_EMBED: 'text-embedding-3-large'
       // Phase 5 — PostgreSQL
-      // 기본은 PgBouncer 포트(6432). 비교 측정 시 5432 로 토글.
+      // PgBouncer 는 Burstable B1ms 에서 미지원이라 5432 직결. 풀링은 psycopg_pool 만.
       PG_HOST: pgServer.outputs.fqdn
-      PG_PORT: '6432'
+      PG_PORT: '5432'
       PG_DATABASE: pgDb.outputs.name
       PG_USER: uamiName
       // Identity

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI-200 Challenge API",
-    version="0.5.0",
+    version="0.5.1",
     description="Enterprise RAG assistant backend (Phase 5 — Cosmos + PostgreSQL pgvector + AOAI).",
     lifespan=lifespan,
 )
