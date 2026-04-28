@@ -5,7 +5,8 @@ Cosmos DB for NoSQL data-plane store.
 - documents / chunks 컨테이너 CRUD
 - chunks: text-embedding-3-large 임베딩 (/embedding, 3072-d float32) 와 함께 저장
 - 검색: VectorDistance 기반 top-K (메타데이터 필터 + 벡터 거리)
-- Bicep 에서 disableLocalAuth=true 로 키 비활성, sqlRoleAssignments 로 UAMI 에 Built-in Data Contributor 부여
+- Bicep 에서 disableLocalAuth=true 로 키 비활성,
+  sqlRoleAssignments 로 UAMI 에 Built-in Data Contributor 부여
 """
 
 from __future__ import annotations

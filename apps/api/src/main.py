@@ -7,17 +7,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.clients.aoai_client import AOAIClient
 from src.routers import chat, health, index_search
 from src.stores.cosmos_store import CosmosSettings, CosmosStore
+from src.stores.pg_store import PgSettings, PgStore
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Phase 4 부터 Cosmos/AOAI 환경변수가 있을 때만 클라이언트 초기화 →
-    # Phase 1~3 의 단독 실행 (env 미설정) 에서도 health/chat stub 은 그대로 동작.
+    # 환경변수가 있을 때만 각 백엔드 초기화 → Phase 1~3 의 단독 실행에서도 health/chat stub 동작.
     cosmos_endpoint = os.environ.get("COSMOS_ENDPOINT")
     aoai_endpoint = os.environ.get("AOAI_ENDPOINT")
+    pg_host = os.environ.get("PG_HOST")
 
     cosmos: CosmosStore | None = None
     aoai: AOAIClient | None = None
+    pg: PgStore | None = None
 
     if cosmos_endpoint:
         cosmos = CosmosStore(CosmosSettings.from_env())
@@ -29,9 +31,13 @@ async def lifespan(app: FastAPI):
                 "AOAI_DEPLOYMENT_EMBED", "text-embedding-3-large"
             ),
         )
+    if pg_host:
+        pg = PgStore(PgSettings.from_env())
+        await pg.open()
 
     app.state.cosmos = cosmos
     app.state.aoai = aoai
+    app.state.pg = pg
     try:
         yield
     finally:
@@ -39,12 +45,14 @@ async def lifespan(app: FastAPI):
             await cosmos.close()
         if aoai is not None:
             await aoai.close()
+        if pg is not None:
+            await pg.close()
 
 
 app = FastAPI(
     title="AI-200 Challenge API",
-    version="0.4.0",
-    description="Enterprise RAG assistant backend (Phase 4 — Cosmos + AOAI).",
+    version="0.5.0",
+    description="Enterprise RAG assistant backend (Phase 5 — Cosmos + PostgreSQL pgvector + AOAI).",
     lifespan=lifespan,
 )
 
