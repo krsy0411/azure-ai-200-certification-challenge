@@ -31,7 +31,7 @@
 | 3 | 3 **인덱스 선택 · 구성** | **사용** (핵심) | `chunks_hnsw` / `chunks_ivf` 두 테이블 분리 적재 → 같은 쿼리로 비교 측정 |
 | 3 | 4 데이터 레이아웃 (TOAST · 파티셔닝) | **생략** | 단일 워크스페이스 · 단일 문서 데이터셋이라 측정 가치 낮음. Phase 9 에서 KQL 로 IO 패턴 관측 시 재방문 가능 |
 | 3 | 5 대용량 스케일링 (read replica 등) | **생략** | B1ms 단일 노드 학습용. 실험 트래픽 없음 |
-| 3 | 6 **연결 최적화** | **사용** | 내장 PgBouncer 활성 (`pgbouncer.enabled=true`, port 6432) **+** 클라이언트 측 `psycopg_pool.AsyncConnectionPool` 이중 풀링 |
+| 3 | 6 **연결 최적화** | **부분 사용** | 내장 PgBouncer 는 **Burstable B1ms 에서 미지원** (`ServerParameterToCMSPgBouncerNotSupportedForBurstable`) — 의도적 생략. 클라이언트 측 `psycopg_pool.AsyncConnectionPool` 단일 풀링으로 커버. PgBouncer 활성 시나리오는 General Purpose / Memory Optimized SKU 로 향후 재방문 |
 
 각 모듈의 8 (평가) · 9 (요약) 단원은 학습자 본인의 자기 진단 영역이라 표에서 일관 생략.
 
@@ -51,9 +51,9 @@
 | PostgreSQL Flexible Server | PG 16 / B1ms / 32 GiB | `pg-ai200challenge-dev05` |
 | Database | 워크스페이스 데이터 컨테이너 | `kb` |
 | AAD admin | UAMI 등록 (passwordAuth=Disabled) | `id-ai200challenge-aca-dev` |
-| Server params | `azure.extensions=VECTOR`, `pgbouncer.enabled=true` 외 | (configurations sub-resource) |
+| Server params | `azure.extensions=VECTOR` (단일 — PgBouncer 는 Burstable 미지원) | (configurations sub-resource) |
 | Firewall | Azure services + 사용자 IP | `AllowAllAzureServices…`, `DevClient` |
-| ACA api (갱신) | env: `PG_HOST`, `PG_USER`, `PG_PORT=6432`, … | `ca-ai200challenge-api-dev` |
+| ACA api (갱신) | env: `PG_HOST`, `PG_USER`, `PG_PORT=5432`, … | `ca-ai200challenge-api-dev` |
 
 (Phase 4 의 cosmos / aoai / acr / cae / uami 는 existing 참조 상태로 유지)
 
@@ -72,21 +72,18 @@ rg-ai200challenge-dev
    ├─ databases/kb
    ├─ administrators/<UAMI principalId>           (AAD admin, ServicePrincipal)
    ├─ configurations
-   │     ├─ azure.extensions = VECTOR
-   │     ├─ pgbouncer.enabled = true
-   │     ├─ pgbouncer.pool_mode = transaction
-   │     └─ pgbouncer.default_pool_size = 50
+   │     └─ azure.extensions = VECTOR              (PgBouncer 는 Burstable 미지원으로 생략)
    └─ firewallRules
          ├─ AllowAllAzureServicesAndResourcesWithinAzureIps  (0.0.0.0)
          └─ DevClient                                        (사용자 IP)
 
 ca-ai200challenge-api-dev (ACA, internal)
    ├─ env: COSMOS_*, AOAI_*  (Phase 4 그대로)
-   └─ env: PG_HOST=<fqdn>, PG_PORT=6432, PG_DATABASE=kb, PG_USER=id-ai200challenge-aca-dev,
+   └─ env: PG_HOST=<fqdn>, PG_PORT=5432, PG_DATABASE=kb, PG_USER=id-ai200challenge-aca-dev,
            AZURE_CLIENT_ID=<UAMI clientId>
 ```
 
-PG_PORT 의 기본값 6432 = **내장 PgBouncer 경유**. 비교 측정 시 5432 (직접 PG) 로 토글 가능.
+PG_PORT = 5432 직결. PgBouncer 는 Burstable B1ms 에서 활성 불가라 클라이언트 측 `psycopg_pool` 단일 풀링만 사용.
 
 ---
 
@@ -283,25 +280,25 @@ docker push acrai200challengedev04.azurecr.io/api:0.5.0
 
 ## 배포 명령
 
-`devClientIpAddress` 를 본인 IP 로 갱신한 뒤 what-if → 배포.
+`devClientIpAddress` 는 **bicepparam 의 default `'0.0.0.0'` 을 그대로 두고 CLI 에서 override**. 본인 공인 IP 를 git 에 박지 않기 위함 — CLAUDE.md §7 참조.
 
 ```bash
-# 사용자 IP 확인
-curl -s https://api.ipify.org && echo
+# 사용자 IP 확인 + 환경변수로
+MY_IP=$(curl -s https://api.ipify.org); echo "$MY_IP"
 
-# bicepparam 의 devClientIpAddress 를 위 값으로 갱신
-
-# what-if 검토
+# what-if 검토 (-p devClientIpAddress=$MY_IP 로 override)
 az deployment group what-if \
   --resource-group rg-ai200challenge-dev \
   --template-file infra/phases/05-postgresql/main.bicep \
-  --parameters infra/phases/05-postgresql/main.bicepparam
+  --parameters infra/phases/05-postgresql/main.bicepparam \
+  --parameters devClientIpAddress=$MY_IP
 
 # 실제 배포
 az deployment group create \
   --resource-group rg-ai200challenge-dev \
   --template-file infra/phases/05-postgresql/main.bicep \
-  --parameters infra/phases/05-postgresql/main.bicepparam
+  --parameters infra/phases/05-postgresql/main.bicepparam \
+  --parameters devClientIpAddress=$MY_IP
 ```
 
 > ⚠ 배포 직후 PostgreSQL 메이저 버전·SKU 변경은 거의 불가능 (재생성 필요). what-if 의 PG 모듈 변경 라인을 반드시 사람 눈으로 한 번 검토 후 진행.
@@ -392,28 +389,41 @@ az containerapp ingress update \
 
 ---
 
-## Cosmos vs PG 비교 측정 (배포 후 채움)
+## Cosmos vs PG 비교 측정 (실측)
 
-같은 chunks N 개를 양쪽에 적재 후 동일 query 50회 평균 측정.
+**측정 환경**: 5개 chunk (text-embedding-3-large = 3072-d) 적재 후 동일 한국어 쿼리("3072 차원 임베딩을 PostgreSQL 에 저장하려면 어떤 타입을 써야 하나요?") 로 워밍업 1회 + 측정 3회. ACA api (Korea Central) → AOAI embed → store. 데이터셋 규모가 작아 절대 수치는 트렌드 참고용.
 
-| 항목 | Cosmos NoSQL (`quantizedFlat`) | PG `chunks_hnsw` | PG `chunks_ivf` |
+| 항목 | Cosmos NoSQL (`quantizedFlat`) | PG `chunks_hnsw` (m=16, ef=64) | PG `chunks_ivf` (lists=100) |
 |---|---|---|---|
-| top-K 쿼리 p50 (ms) | _TBD_ | _TBD_ | _TBD_ |
-| top-K 쿼리 p95 (ms) | _TBD_ | _TBD_ | _TBD_ |
-| 인덱스 빌드 시간 (s, N 청크) | n/a (자동) | _TBD_ | _TBD_ |
-| 쓰기 처리량 (chunks/s, batch=64) | _TBD_ | _TBD_ | _TBD_ |
-| 운영 복잡도 (체감) | 매니지드 인덱스, 키 회수만 | extension·인덱스·풀·token 회전 의식 | (HNSW 와 동일 기반) |
+| 평균 응답 (s, 3회 평균, end-to-end) | **0.22** | **0.16** | **0.17** |
+| top-1 doc 일치 | doc-pg | doc-pg | doc-pg |
+| top-1 raw distance | 0.5463 | 0.4537 | 0.4537 |
+| 인덱스 빌드 시간 | n/a (자동) | 부트스트랩 즉시 (5건 < 1ms) | 부트스트랩 즉시 |
+| 쓰기 처리량 (5건 batch 한 번) | 정상 | 정상 (양쪽 테이블에 동시 적재) | (HNSW 와 같은 한 호출) |
+| 운영 복잡도 (체감) | 매니지드 인덱스, 키 회수만 | extension·인덱스 정의·풀·token 회전 모두 의식 | (HNSW 와 동일 기반) |
 | 비용 (월, 학습 트래픽) | Serverless RU, 거의 0 | B1ms ~$13 | (PG 동일) |
 
-> ⚠ 풀링 측정 시 `PG_PORT=5432 vs 6432` 도 같이 토글해 PgBouncer 효과를 별도 행으로 추가.
+> 관찰:
+> - **end-to-end 시간의 dominant factor 는 AOAI embed 호출** (~150ms 추정). vector search 자체 latency 차이는 5건 규모에서 측정 불가.
+> - **HNSW vs IVFFlat 차이는 무의미한 수준** (5건). N≥10⁴ 에서 HNSW 의 recall/latency 우위가 드러나는데, 학습용 데이터셋에는 의미 없음.
+> - **score 척도**: 둘 다 cosine distance 기반이지만 raw 값은 store 별 표기 (Cosmos `VectorDistance` vs PG `<=>`). 직접 비교 X, top-1 매핑 일치만 확인.
+> - **PgBouncer 측정은 SKU 제약으로 미수행** — General Purpose 이상에서 향후 재방문.
 
 ---
 
-## 함정 · 교훈 (배포 · 검증 후 사용자 / Claude 가 같이 채움)
+## 함정 · 교훈
 
-- _(예: `azure.extensions` 의 값을 소문자로 넣어 `CREATE EXTENSION vector` 가 권한 거부 → 대문자 `VECTOR`로 정정)_
-- _(예: `principalName` 과 `PG_USER` 불일치로 로그인 실패 → 둘 다 `id-ai200challenge-aca-dev` 로 통일)_
-- _TBD ..._
+- **사용자 식별 정보의 IaC 파일 노출 회피.** `devClientIpAddress` 같은 본인 공인 IP / Entra objectId / 거주지 단서를 `bicepparam` 에 박아 commit 하면 firewall allowlist 와 함께 git 에 영구 남아 공격면 정보가 된다. default 는 `'0.0.0.0'` / `''` 로 두고 배포 시점에 `-p key=$VAR` 로 override 주입. **CLAUDE.md §7 표준 룰로 반영함.**
+
+- **PgBouncer 는 Burstable 컴퓨트 티어에서 미지원** (`ServerParameterToCMSPgBouncerNotSupportedForBurstable`). B1ms 같은 학습용 SKU 에서 `pgbouncer.enabled=true` 를 set 하면 즉시 deployment 실패. **결정**: SKU 를 General Purpose 로 올리는 비용을 부담하지 않고, 클라이언트 측 `psycopg_pool` 단일 풀링만으로 진행. PgBouncer 부분은 모듈 3 단원 6 의 의도적 생략으로 커버리지 표에 명시. AI-200 시험 운영 결정 포인트로 자주 등장.
+
+- **PgBouncer sub-parameter 와 `pgbouncer.enabled` 의 순서 의존** (사실상 옵션 A 채택으로 무관해졌지만 학습 메모로 남김): `pgbouncer.default_pool_size`, `pgbouncer.pool_mode` 는 `pgbouncer.enabled=true` 가 *먼저 적용* 된 후에만 변경 가능 (`ServerParameterToCMSBlockedUpdateForDisabledPgBouncer`). Bicep 의 `items()` 함수는 키를 알파벳 순으로 정렬하므로 `default_pool_size` < `enabled` < `pool_mode` 순서가 되어 `default_pool_size` 가 먼저 시도되며 실패한다. 대처: 모듈 호출을 `enable` (→ `enabled`) 와 `tune` (→ sub-params) 둘로 쪼개고 `dependsOn` 으로 직렬화.
+
+- **`register_vector_async` chicken-and-egg** — *cold start PG 에서 `psycopg_pool.AsyncConnectionPool.configure` 안에 `register_vector_async(conn)` 를 박으면 lifespan startup 이 실패한다.* vector type 이 PG 에 아직 없는데 (CREATE EXTENSION 미실행) 풀이 connection 마다 vector adapter 등록을 시도 → "vector type not found in the database" → connection 0개 → 30초 PoolTimeout → app 죽음. **대처**: 부트스트랩 SQL (`CREATE EXTENSION vector` 포함) 은 풀 *밖*의 short-lived `psycopg.AsyncConnection.connect()` 로 한 번 실행한 후, 그 다음에야 `_ensure_pool()` (= configure 에 register 포함) 을 호출해야 한다. 한 번이라도 vector extension 이 catalog 에 들어간 PG 라면 풀의 register 가 통과하므로, 운영 중 재시작은 문제 없음. (Phase 5 첫 배포 검증 시 임시로 본인 admin 권한으로 `CREATE EXTENSION vector` 수동 실행 후 ACA revision restart 로 우회 — 코드 fix 는 0.5.1 에서.)
+
+- **AAD admin 등록 CLI 는 `microsoft-entra-admin` 서브명령어** (`az postgres flexible-server microsoft-entra-admin create ...`). 인터넷의 옛 문서에 보이는 `ad-admin` 은 현재 az CLI 에서 인식 안 됨 (`'ad-admin' is misspelled or not recognized`). 본 레포 검증 시나리오 / 학습 경로 문서 인용 시 항상 `microsoft-entra-admin` 사용.
+
+- **Failed deployment 직후 즉시 재배포 시 `ServerIsBusy`**. PG flexible server 의 state 가 Ready 로 보여도 backend sub-operation (예: 파라미터 변경 롤백) 이 진행 중일 수 있다. 재시도 전 30~60초 grace 두기. 폴링하려면 `az postgres flexible-server show ... --query state` 로 Ready 확인 + 추가 30초 대기.
 
 ---
 
