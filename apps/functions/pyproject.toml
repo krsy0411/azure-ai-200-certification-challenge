@@ -1,0 +1,38 @@
+[project]
+name = "ai200challenge-functions"
+version = "0.7.0"
+description = "Azure AI-200 Challenge — Phase 7 Functions (Cosmos change feed → SB → embed → PG/Redis → EG)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "azure-functions>=1.21.0",
+    "azure-identity>=1.19.0",
+    "azure-servicebus>=7.12.0",
+    "azure-eventgrid>=4.20.0",
+    "openai>=1.55.0",
+    "psycopg[binary]>=3.2.3",
+    "psycopg-pool>=3.2.4",
+    "pgvector>=0.3.6",
+    "redis[hiredis]>=5.2.0",
+    "numpy>=2.0.0",
+    "aiohttp>=3.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
