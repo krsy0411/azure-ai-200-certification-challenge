@@ -20,13 +20,26 @@
 4. **언어**: 사용자 커뮤니케이션·문서는 한국어. 코드 주석은 최소화(영문/한국어 모두 허용).
 5. **배포 방식 — Bicep IaC 우선.** Phase 1~9 의 모든 리소스 프로비저닝·구성은 **Bicep 모듈**로 선언하고, 각 Phase 는 단일 엔트리 `infra/phases/0N-*/main.bicep` 에서 모듈을 조립해 `az deployment group create` / `az deployment sub create` 로 배포한다. Portal GUI 는 스크린샷·교육 산출물이 아니라 **결과 확인용**으로만 사용한다. **예외 — 컨테이너 이미지 빌드·ACR 푸시**: IaC 로 선언할 수 없는 작업이므로 `docker build --platform linux/amd64` + `docker push` + `az acr login` CLI 를 각 Phase 문서의 "이미지 빌드·푸시" 하위에서 사용. **Phase 10** 은 Phase 1~9 의 `main.bicep` 을 `infra/main.bicep` 에 상위 조립하고 GitHub Actions CI 로 자동화하는 **축소된 범위**다.
 6. **실제 배포 실행은 사용자가 수행.** Claude 는 Bicep 모듈·파라미터·배포 명령어를 준비하고, 사용자가 `az deployment ... what-if` 로 검토 후 실제 배포를 실행한다. 문서의 "함정·교훈" 섹션은 배포 후 사용자/Claude 가 같이 채운다.
-7. **자원 라이프사이클 — Phase 단위 정리 + 공통 자원 보존.** 비용 통제와 학습 격리를 위해 Phase 마다 자원이 살았다 정리되는 사이클을 갖는다.
+7. **자원 라이프사이클 — Phase 단위 정리 + *무료/사실상-무료 자원만 보존*.** 비용 통제와 학습 격리를 위해 Phase 마다 자원이 살았다 정리되는 사이클을 갖는다.
+   - **비용 현실 (Phase 7 실측, 7일 108,569 KRW, docs/learning-paths/07-backend-services.md 함정 8)**: dev 환경이라도 idle 자원이 *시간당* 누적된다. Redis Enterprise Memory_M10 = ~11,680 KRW/일, ACA Container App (min replica 1) = ~1,743 KRW/일, AKS LB+IP = ~1,125 KRW/일, PG B1ms = ~700 KRW/일. **compute 가 있는 자원은 idle 만으로도 빠르게 누적**.
    - **검증 보존**: Phase 검증·측정이 끝났더라도 Claude 는 자원을 자동 삭제하지 않는다. 사용자가 Portal·브라우저·외부 도구로 추가 검증을 할 수 있으므로, **"정리해" / "삭제해" / "drop" 등 명시 요청 전까지** 모든 Azure 자원과 임시 권한 (예: AAD admin 부여, ACA ingress external 토글) 을 그대로 둔다.
-   - **Phase 종료 시 정리 + 다음 Phase 진입 시 재배포**: 사용자 명시 요청을 받으면 해당 Phase 의 *Phase-specific* 자원을 정리한다. 다음 Phase 의 `main.bicep` 이 그 자원을 `existing` 참조한다면 다음 Phase 진입 직전에 해당 Phase 의 `main.bicep` 을 한 번 다시 돌려 재배포한다 (Phase 4 ↔ Phase 5 패턴). 같은 이름의 자원이 soft-delete 충돌하면 접미사를 한 단계 올린다 (`dev04` → `dev06`).
-   - **공통 자원은 절대 정리 대상이 아니다**:
-     - **유지**: ACR (`acr...`), Log Analytics (`law-...`), Application Insights (`ai-...`), 공용 UAMI (`id-...-aca-...`, `id-...-aks-...`), ACA Environment (`cae-...`), AKS 클러스터 (Phase 3 학습 산출물), Key Vault (Phase 8 이후), App Configuration (Phase 8 이후)
-     - **정리 대상 (Phase-specific 데이터·런타임)**: Cosmos DB / Azure OpenAI / PostgreSQL Flexible Server / Managed Redis / Service Bus / Event Grid 토픽 / Function App / Storage 계정, 그리고 Phase 1 의 App Service / App Service Plan
+   - **Phase 종료 시 정리 + 다음 Phase 진입 시 재배포**: 사용자 명시 요청을 받으면 해당 Phase 의 *모든 compute/유료 자원* 을 정리한다. 다음 Phase 의 `main.bicep` 이 그 자원을 `existing` 참조한다면 다음 Phase 진입 직전에 해당 Phase 의 `main.bicep` 을 한 번 다시 돌려 재배포한다 (Phase 4 ↔ Phase 5 패턴). 같은 이름의 자원이 soft-delete 충돌하면 접미사를 한 단계 올린다 (`dev04` → `dev06`).
+   - **보존 / 정리 분류 (Phase 7 실측 기반, 2026-05-18 룰 갱신)**:
+     - **보존 (무료 또는 사실상-무료)**:
+       - **ACR Basic** (`acr...`) — storage 만 ~260 KRW/일, 이미지가 학습 자산
+       - **Log Analytics** (`law-...`) — 5GB/월 free, ingest 만 과금
+       - **공용 UAMI** (`id-...-aca-...`, `id-...-aks-...`) — 무료
+       - **ACA Environment** (`cae-...`) — Container App 이 살아있을 때만 과금. 자체는 무료
+       - **Application Insights** (`ai-...`) — workspace-based 라 LAW 와 같이 ingest 만
+       - **Key Vault / App Configuration** (Phase 8 이후) — sub-원 단위 비용
+     - **정리 (compute 또는 유의미한 idle 비용)**:
+       - **Cosmos DB / Azure OpenAI / PostgreSQL / Managed Redis** — Phase 4·5·6 데이터 자원
+       - **Service Bus / Event Grid / Function App / Storage** — Phase 7 신규
+       - **ACA Container Apps (api / web)** — Phase 단위 정리, 다음 Phase 진입 시 image tag 와 함께 재배포 (CAE 는 보존이므로 컨테이너만 정리)
+       - **AKS 클러스터 + 자동 생성된 `MC_...` RG** — Phase 3 학습 산출물이지만 LB+IP idle 비용. 학습 완료 후 정리. Phase 10 (포트폴리오 부스터) 에서 단순 manifest 시연이면 재배포
+       - Phase 1 의 App Service / App Service Plan
    - **임시 권한 회수는 정리 룰의 예외**: 본인 objectId 임시 admin 부여, ACA ingress 임시 external 토글 등 *검증 흐름의 일부로 잠시 부여한 권한* 은 검증 종료 시점에 같은 흐름 안에서 회수한다 (별도 사용자 요청 불필요). 자원 삭제와 권한 회수는 다른 결정이다.
+   - **이전 룰 (2026-05-18 이전) 과의 차이**: 이전 룰은 *공용 UAMI / CAE / AKS / ACA api·web* 도 보존이었다. 실측 비용 (Phase 7) 으로 ACA + AKS 가 *진짜* idle 비용 발생 자원임이 드러나 보존 목록에서 제외. UAMI / CAE / LAW / ACR / ACR / AI 만 무료 또는 사실상 무료.
 8. **보안**: 시크릿은 Phase 8 이후 Key Vault + 관리형 ID가 표준. 그 전에는 `.env`를 쓰되 `.gitignore`로 반드시 제외.
    - **IaC 파라미터 파일에 사용자 식별 정보 박지 말 것.** `*.bicepparam` 의 `devClientIpAddress`, 본인 Entra objectId, 거주지·근무지 단서가 되는 값은 default 를 `'0.0.0.0'` / `''` 로 두고, 배포 시점에 `az deployment ... -p key=$VAR` 로 **override** 한다. 이유: firewall allowlist · admin 부여 정보와 함께 git history 에 영구 남으면 공격면 정보 + 포트폴리오용 public 레포 노출 위험. 동일 원칙을 `principalId` 등 모든 사용자별 값에 적용.
 9. **작업 컨텍스트 영속화 — `docs/history.md`** (필수). 사용자는 컴퓨터를 자주 켜고 끄며 Claude Code 대화 컨텍스트가 자주 날아간다.
