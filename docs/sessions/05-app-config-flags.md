@@ -186,6 +186,10 @@ time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/js
 
 ## 참고 자료
 
-- MS Learn: [Manage app secrets and configuration](https://learn.microsoft.com/ko-kr/training/paths/manage-app-secrets-configuration/)
-- MS Learn: [App Configuration with Key Vault references](https://learn.microsoft.com/ko-kr/azure/azure-app-configuration/use-key-vault-references-spring-boot)
-- 본 레포: `infra/sessions/05-app-config-flags/main.bicep`, `apps/api/src/config/loader.py`
+- Microsoft Learn — [Manage app secrets and configuration](https://learn.microsoft.com/ko-kr/training/paths/manage-app-secrets-configuration/)
+- Microsoft Learn — [App Configuration with Key Vault references](https://learn.microsoft.com/ko-kr/azure/azure-app-configuration/use-key-vault-references-spring-boot)
+- 본 저장소 — `infra/sessions/05-app-config-flags/main.bicep`, `apps/api/src/config/loader.py`
+
+---
+
+👈 [session-04 — 비동기 인제스션 (Service Bus + Event Grid + Functions)](./04-async-ingestion.md) | [session-06 — Observability 심화](./06-observability.md) 👉

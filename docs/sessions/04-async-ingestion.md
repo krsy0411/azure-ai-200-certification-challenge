@@ -208,6 +208,10 @@ az servicebus message send \
 
 ## 참고 자료
 
-- MS Learn: [Integrate backend services for AI solutions](https://learn.microsoft.com/ko-kr/training/paths/integrate-backend-services-ai-solutions/)
-- MS Learn: [Azure Functions Flex Consumption](https://learn.microsoft.com/ko-kr/azure/azure-functions/flex-consumption-plan)
-- 본 레포: `infra/sessions/04-async-ingestion/main.bicep`, `apps/functions/function_app.py`
+- Microsoft Learn — [Integrate backend services for AI solutions](https://learn.microsoft.com/ko-kr/training/paths/integrate-backend-services-ai-solutions/)
+- Microsoft Learn — [Azure Functions Flex Consumption](https://learn.microsoft.com/ko-kr/azure/azure-functions/flex-consumption-plan)
+- 본 저장소 — `infra/sessions/04-async-ingestion/main.bicep`, `apps/functions/function_app.py`
+
+---
+
+👈 [session-03 — Managed Redis 시맨틱 캐시](./03-redis-cache.md) | [session-05 — App Configuration 피처 플래그](./05-app-config-flags.md) 👉

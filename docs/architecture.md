@@ -32,7 +32,7 @@ flowchart TB
     Redis[("Managed Redis<br/>RediSearch<br/>시맨틱 캐시")]
   end
 
-  subgraph Ingest[비동기 인제스션]
+  subgraph Ingest[비동기 인젝션]
     Blob[("Blob Storage<br/>documents 컨테이너")]
     EG{{"Event Grid<br/>System Topic"}}
     SB{{"Service Bus<br/>ingest-queue"}}

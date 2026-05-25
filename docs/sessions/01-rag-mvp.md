@@ -301,3 +301,7 @@ curl -X POST "https://$API_FQDN/api/chat" \
 - Microsoft Learn — [Develop AI solutions with Azure Cosmos DB](https://learn.microsoft.com/ko-kr/training/paths/develop-ai-solutions-azure-cosmos-db/)
 - Microsoft Learn — [Azure Container Apps overview](https://learn.microsoft.com/ko-kr/azure/container-apps/overview)
 - 본 저장소 — `infra/sessions/01-rag-mvp/main.bicep`, `apps/api/`, `apps/web/`
+
+---
+
+👈 [session-00 — 사전 설정 & 구독 준비](./00-setup.md) | [session-02 — PostgreSQL pgvector 비교](./02-pgvector.md) 👉

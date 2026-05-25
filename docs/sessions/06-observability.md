@@ -197,6 +197,10 @@ done
 
 ## 참고 자료
 
-- MS Learn: [Observe and troubleshoot apps](https://learn.microsoft.com/ko-kr/training/paths/observe-troubleshoot-apps/)
-- OpenTelemetry Python: [opentelemetry.io/docs/languages/python/](https://opentelemetry.io/docs/languages/python/)
-- 본 레포: `infra/sessions/06-observability/main.bicep`, `apps/api/src/observability/spans.py`
+- Microsoft Learn — [Observe and troubleshoot apps](https://learn.microsoft.com/ko-kr/training/paths/observe-troubleshoot-apps/)
+- OpenTelemetry Python — [opentelemetry.io/docs/languages/python/](https://opentelemetry.io/docs/languages/python/)
+- 본 저장소 — `infra/sessions/06-observability/main.bicep`, `apps/api/src/observability/spans.py`
+
+---
+
+👈 [session-05 — App Configuration 피처 플래그](./05-app-config-flags.md) | [session-07 — Azure Kubernetes Service 대안 배포](./07-aks.md) 👉

@@ -197,6 +197,10 @@ kubectl logs -l job-name=embedding-reprocess --tail=50
 
 ## 참고 자료
 
-- MS Learn: [Deploy and monitor apps on AKS](https://learn.microsoft.com/ko-kr/training/paths/deploy-monitor-apps-azure-kubernetes-service/)
-- MS Learn: [Azure Workload Identity](https://learn.microsoft.com/ko-kr/azure/aks/workload-identity-overview)
-- 본 레포: `infra/sessions/07-aks/main.bicep`, `apps/worker/`, `infra/sessions/07-aks/manifests/`
+- Microsoft Learn — [Deploy and monitor apps on Azure Kubernetes Service](https://learn.microsoft.com/ko-kr/training/paths/deploy-monitor-apps-azure-kubernetes-service/)
+- Microsoft Learn — [Azure Workload Identity](https://learn.microsoft.com/ko-kr/azure/aks/workload-identity-overview)
+- 본 저장소 — `infra/sessions/07-aks/main.bicep`, `apps/worker/`, `infra/sessions/07-aks/manifests/`
+
+---
+
+👈 [session-06 — Observability 심화](./06-observability.md) | [자원 정리](../cleanup.md) 👉

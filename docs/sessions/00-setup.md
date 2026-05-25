@@ -198,3 +198,7 @@ text-embedding-3-large     text-embedding-3-large      Standard
 - Microsoft Learn — [Manage app secrets and configuration](https://learn.microsoft.com/ko-kr/training/paths/manage-app-secrets-configuration/)
 - Microsoft Learn — [Azure OpenAI Service](https://learn.microsoft.com/ko-kr/azure/ai-services/openai/)
 - 본 저장소 — `infra/sessions/00-setup/main.bicep`, `infra/modules/aoai-*.bicep`
+
+---
+
+👈 [워크샵 홈](../../README.md) | [session-01 — RAG MVP on Azure Container Apps + Key Vault + OpenTelemetry](./01-rag-mvp.md) 👉

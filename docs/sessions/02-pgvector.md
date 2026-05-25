@@ -275,3 +275,7 @@ curl -X POST "https://$API_FQDN/api/chat" \
 - Microsoft Learn — [Develop AI solutions with Azure Database for PostgreSQL](https://learn.microsoft.com/ko-kr/training/paths/develop-ai-solutions-azure-database-postgresql/)
 - pgvector — [github.com/pgvector/pgvector](https://github.com/pgvector/pgvector)
 - 본 저장소 — `infra/sessions/02-pgvector/main.bicep`, `apps/api/src/stores/pg_store.py`, `scripts/seed_both.py`
+
+---
+
+👈 [session-01 — RAG MVP on Azure Container Apps + Key Vault + OpenTelemetry](./01-rag-mvp.md) | [session-03 — Managed Redis 시맨틱 캐시](./03-redis-cache.md) 👉
