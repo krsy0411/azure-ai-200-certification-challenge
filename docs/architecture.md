@@ -1,69 +1,136 @@
-# 목표 아키텍처
+# 아키텍처
 
-엔터프라이즈 RAG 지식 비서의 최종(Phase 9 완료) 모습.
+워크샵을 모두 완주한 시점의 최종 아키텍처입니다. 각 세션이 어떤 자원을 추가하는지는 [README.md 의 아젠다](../README.md#하루-일정) 참고.
 
-## 컴포넌트 다이어그램
+---
+
+## 데이터 흐름
 
 ```
-                  ┌────────────┐
-  end user ─────► │  Next.js    │  (ACA: web)
-                  │  App Router │
-                  └─────┬──────┘
-                        │ HTTPS
-                        ▼
-                  ┌────────────┐       ┌────────────────────┐
-                  │  FastAPI    │ ─────►  Azure OpenAI       │
-                  │  (ACA: api) │       │  gpt-4o-mini        │
-                  │             │       │  text-embedding-3-L │
-                  └──┬──┬──┬───┘       └────────────────────┘
-                     │  │  │
-                     │  │  └───────────────► Managed Redis
-                     │  │                   (시맨틱 캐시 · Pub/Sub)
-                     │  │
-                     │  └──► PostgreSQL Flexible Server
-                     │         (pgvector · 관계형)
-                     │
-                     └──► Cosmos DB for NoSQL
-                            (document · chunk · vector)
+                    ┌──────────────────────────────────────────────────────┐
+                    │                  Azure AD / Entra ID                  │
+                    │       (DefaultAzureCredential → UAMI 토큰)            │
+                    └──────────────────────────────────────────────────────┘
+                                          ▲
+                                          │ (모든 호출이 키 없이 토큰으로 인증)
+                                          │
+[브라우저]  ──HTTPS──▶  [ACA: ca-web (Next.js)]  ──HTTP──▶  [ACA: ca-api (FastAPI)]
+                                                                    │
+                            ┌───────────────────────────────────────┼────────────────────────────────┐
+                            ▼                                       ▼                                ▼
+                    [Cosmos DB (vector)]                   [PostgreSQL pgvector]             [Managed Redis (semantic cache)]
+                    chunks container                       chunks table                       RediSearch HNSW
+                    DiskANN/quantizedFlat                  halfvec(3072) HNSW                 cosine ≥ 0.92 캐시 히트
+                            ▲                                       ▲                                ▲
+                            │                                       │                                │
+                            │ ◀───── change feed ─────┐             │                                │
+                            │                         ▼             │                                │
+                    [Cosmos lease container]    [Function: on_cosmos_change]                          │
+                                                                                                     │
+                                                                                                     │
+[사용자]  ──Blob 업로드──▶  [Storage]  ──Event Grid──▶  [Service Bus: ingest-queue]  ──▶  [Function: on_ingest_message]
+                                                              │                                      │
+                                                              │ (max delivery 5)                     │
+                                                              ▼                                      │
+                                                          [SB: DLQ]                                  │
+                                                                                                     ▼
+                                                                                          (청크 분할 → AOAI embed → Cosmos + PG upsert)
 
-  Blob Storage ─► Event Grid ─► Azure Functions ─► Service Bus ─►  AKS Worker
-  (업로드)        (CloudEvent)    (웹훅/이벤트 처리)   (추론 큐)      (임베딩 배치)
+                    [Azure OpenAI]: gpt-4o-mini (chat) + text-embedding-3-large (embed)
+                            ▲
+                            │ (UAMI 토큰)
+                            │
+                    ca-api, Function 양쪽에서 호출
 
-                  ┌──────────────────────────────────────────┐
-  Key Vault ◄───► │  모든 서비스: Managed Identity 로 인증     │
-  App Config ◄───► │  (Entra ID · RBAC)                       │
-                  └──────────────────────────────────────────┘
+                                                  [App Configuration] ←── ca-api 가 polling (sentinel 30s)
+                                                          │
+                                                          ├── key/value (endpoints, hosts)
+                                                          ├── feature flags (enable_semantic_cache, …)
+                                                          └── Key Vault references → [Key Vault]
 
-  모든 서비스 ────► OpenTelemetry ────► Azure Monitor / App Insights
+[모든 자원] ──OpenTelemetry──▶ [Application Insights] ──▶ [Log Analytics Workspace]
+                                                                  │
+                                                                  ├── Workbook (P95, hit rate, token cost)
+                                                                  ├── Metric Alert (오류율 > 5%) → [Action Group] → 이메일
+                                                                  └── KQL 직접 쿼리
+
+(선택) [AKS]: embedding 재처리 워커 — Cosmos 의 null embedding chunk 를 K8s Job 으로 재처리
+       └── Container Insights (DCR + DCRA) ──▶ Log Analytics Workspace
 ```
 
-## 서비스별 책임
+---
 
-| 서비스 | 책임 | Phase |
+## 자원 매핑
+
+각 세션이 추가하는 자원과 그 역할:
+
+| 세션 | 추가 자원 | 역할 |
 |---|---|---|
-| **Next.js** | 챗 UI, 문서 업로드, 관리자 뷰 | 1~ |
-| **FastAPI** | REST API, RAG 오케스트레이션, LLM 호출 | 1~ |
-| **AKS Worker** | 임베딩 배치 재처리 (대용량) | 3 |
-| **Azure Functions** | Event Grid 웹훅, 추론 큐 디스패처 | 7 |
-| **Cosmos DB** | 문서/청크/벡터의 기본 저장소 | 4 |
-| **PostgreSQL** | 사용자·작업 공간·감사 로그 + pgvector 비교 실험 | 5 |
-| **Managed Redis** | 시맨틱 캐시, 실시간 알림 Pub/Sub, 작업 Streams | 6 |
-| **Service Bus** | 추론/임베딩 요청 큐, DLQ | 7 |
-| **Event Grid** | Blob 업로드 이벤트 라우팅 | 7 |
-| **Key Vault** | 모든 시크릿의 원천(Single source of truth) | 8 |
-| **App Configuration** | 기능 플래그, 환경별 구성 | 8 |
-| **Application Insights** | 분산 추적, 로그, 메트릭, 경고 | 9 |
+| session-00 | RG · AOAI · LAW · App Insights · KV · UAMI | 워크샵 전체의 기반 |
+| session-01 | ACR · ACA Env · ca-api · ca-web · Cosmos | RAG MVP — 동기 호출 |
+| session-02 | PostgreSQL Flex (pgvector) | 같은 RAG 를 PG 백엔드로 비교 |
+| session-03 | Managed Redis (RediSearch) | 시맨틱 캐시 — 의미 유사 질문 흡수 |
+| session-04 | Service Bus · Event Grid · Functions · Storage | 비동기 인제스션 파이프라인 |
+| session-05 | App Configuration · Feature flag | 코드 재배포 없이 동작 토글 |
+| session-06 | Workbook · Action Group · Metric Alert | 관측성 — 비즈니스 의미 span + 알람 |
+| session-07 | AKS · Container Insights | ACA 대안 — embedding 재처리 워커 |
 
-## 인증 원칙
+---
 
-- 사용자는 초기엔 고정 토큰으로 로그인(Phase 1~7). Phase 8 이후 Entra ID 앱 등록 연동 고려.
-- **서비스-투-서비스는 Managed Identity** 만 사용. 연결 문자열을 코드/환경변수로 넣지 않는다 (Phase 8 이후).
+## 명명 규칙
 
-## 데이터 흐름: "문서를 업로드하고 질의하기"
+`<리소스약어>-ai200ws-<env>` (또는 하이픈 금지 자원은 `<약어>ai200ws<env><suffix>`)
 
-1. 사용자 업로드 → Next.js → FastAPI `/documents` → Blob Storage
-2. Blob 이벤트 → Event Grid → Azure Function → Service Bus `inference-queue` 에 메시지 enqueue
-3. AKS Worker 컨슈머: 메시지 수신 → 청크 분할 → Azure OpenAI embeddings → **Cosmos DB** 에 벡터 저장
-4. 동시에 PostgreSQL 감사 로그 insert
-5. 완료 이벤트 → Redis Pub/Sub → Next.js 실시간 업데이트
-6. 사용자가 질문 → FastAPI: Redis 시맨틱 캐시 히트 여부 확인 → miss 면 Cosmos `VectorDistance` 검색 → Azure OpenAI 응답 생성 → 캐시 적재 → 사용자에게 스트리밍
+- `rg` 리소스 그룹 (`rg-ai200ws-dev`)
+- `aoai` Azure OpenAI (`aoai-ai200ws-dev`)
+- `cosmos` Cosmos DB (`cosmos-ai200ws-dev`)
+- `pg` PostgreSQL (`pg-ai200ws-dev`)
+- `redis` Managed Redis (`redis-ai200ws-dev`)
+- `sb` Service Bus (`sb-ai200ws-dev`)
+- `egt` Event Grid 토픽
+- `func` Function App
+- `kv` Key Vault
+- `ac` App Configuration
+- `ai` Application Insights
+- `law` Log Analytics Workspace
+- `id` UAMI
+- `acr` Container Registry (하이픈 금지 → `acrai200wsdev<uniq>`)
+- `st` Storage (`stai200wsdev<uniq>`)
+- `cae` Container Apps Environment
+- `ca` Container App (`ca-api-...`, `ca-web-...`)
+- `aks` AKS
+
+---
+
+## 인증 전체 흐름
+
+워크샵의 핵심 보안 원칙: **시크릿은 한 줄도 코드/`.env` 에 없다.**
+
+```
+[ca-api / ca-web / Function / AKS Pod]
+    │
+    │ DefaultAzureCredential
+    │  ├─ (클라우드) UAMI 토큰
+    │  └─ (로컬 개발) `az login` 자격
+    ▼
+[Entra ID] → 단명 OAuth2 토큰 (audience: 호출 대상 별)
+    │
+    ▼
+[AOAI / Cosmos / KV / AC / SB / EG / Storage / Redis / ACR]
+    Azure RBAC 으로 권한 검사
+```
+
+각 자원이 UAMI 에 부여해야 하는 역할:
+
+| 자원 | 역할 |
+|---|---|
+| AOAI | Cognitive Services OpenAI User |
+| Cosmos (data plane) | Cosmos DB Built-in Data Contributor |
+| Key Vault | Key Vault Secrets User |
+| App Configuration | App Configuration Data Reader |
+| Service Bus | Azure Service Bus Data Receiver / Sender |
+| Event Grid | EventGrid Data Sender |
+| Storage Blob | Storage Blob Data Reader (또는 Contributor) |
+| ACR | AcrPull |
+| Managed Redis | (Access Policy 별도) |
+| AKS (Workload Identity) | (Federated Credential 별도) |

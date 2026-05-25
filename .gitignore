@@ -34,7 +34,7 @@ azure-credentials.json
 .msal_cache
 
 # ---- IDE / OS ----
-.vscode/
+
 .idea/
 .DS_Store
 Thumbs.db
