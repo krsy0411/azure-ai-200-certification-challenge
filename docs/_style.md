@@ -98,6 +98,15 @@
 | 폴백 | 대체 리전 사용 / 대안으로 ~ 사용 / 승인이 안 된 경우 ~ 사용 |
 | 레포 | 저장소 |
 | CLI override | 배포 명령을 실행할 때마다 `--parameters key=value` 인자로 직접 넘겨주는 방식 |
+| 인젝션 (잘못된 표기) | 인제스션 (ingestion) — 외부 데이터를 시스템 안으로 수집·적재하는 행위 |
+
+> [!IMPORTANT]
+> **ingestion vs injection 혼동 주의** — 한국어로 옮길 때 두 단어를 혼동해서는 안 됩니다.
+>
+> - `ingestion` → **인제스션** — 데이터를 받아들이는 행위 (예: Blob → Cosmos · PostgreSQL 적재). 본 워크샵의 비동기 인제스션 파이프라인이 여기에 해당합니다
+> - `injection` → 인젝션 — 외부에서 무언가를 주입 (예: SQL Injection, Prompt Injection, Dependency Injection). *주입* 의미가 살아있는 곳에서만 사용합니다
+>
+> 첫 등장 시 영문 병기를 권장합니다 — `비동기 인제스션 (ingestion) 파이프라인`.
 
 ### 2.3 시간 단정 표현 금지
 
