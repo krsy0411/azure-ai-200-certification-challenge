@@ -1,14 +1,10 @@
-// AOAI 계정에 'Cognitive Services OpenAI User' 역할을 principal 에 부여.
-// - 일반 ARM RBAC (Microsoft.Authorization/roleAssignments). Cosmos data-plane 과 달리 control-plane IAM 사용.
-// - 'OpenAI User' 는 모델 호출 권한만 (배포 생성/삭제 권한 없음).
+@description('AOAI account name. Role assignment is scoped to this account.')
+param aoaiAccountName string
 
-@description('역할을 부여할 대상 AOAI 계정 이름')
-param accountName string
-
-@description('역할을 받을 principal (UAMI 등) 의 objectId')
+@description('Principal (UAMI principalId or user objectId) that will get the role')
 param principalId string
 
-@description('principalType — UAMI 는 ServicePrincipal')
+@description('Principal type')
 @allowed([
   'ServicePrincipal'
   'User'
@@ -16,21 +12,23 @@ param principalId string
 ])
 param principalType string = 'ServicePrincipal'
 
-// Cognitive Services OpenAI User (built-in)
-var roleDefinitionId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+// Built-in role: Cognitive Services OpenAI User
+// https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning#cognitive-services-openai-user
+var cognitiveServicesOpenAIUserId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 
-resource account 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = {
-  name: accountName
+resource aoai 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = {
+  name: aoaiAccountName
 }
 
-resource assignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(account.id, principalId, roleDefinitionId)
-  scope: account
+resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: aoai
+  // Deterministic GUID so re-deploys are idempotent.
+  name: guid(aoai.id, principalId, cognitiveServicesOpenAIUserId)
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesOpenAIUserId)
     principalId: principalId
     principalType: principalType
   }
 }
 
-output id string = assignment.id
+output id string = roleAssignment.id
