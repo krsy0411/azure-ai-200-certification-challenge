@@ -11,6 +11,8 @@ venv/
 htmlcov/
 dist/
 build/
+# uv 의 lock 파일은 학습용 저장소에서는 제외 (재현은 pyproject.toml 의 >= 제약으로 충분)
+uv.lock
 
 # ---- Node / Next.js ----
 node_modules/
