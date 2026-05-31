@@ -272,6 +272,58 @@ GitHub 의 헤더 앵커 규칙:
 > [!NOTE]
 > **예외 — 프로비저닝 대기 시간 안내** — `> [!NOTE] Azure OpenAI deployment ... 약 5~8분 소요됩니다` 같이 *Azure 자원이 만들어지는 데 실제로 걸리는 시간* 은 학습자의 대기 결정에 필요하므로 유지합니다. 학습자에게 "그동안 무엇을 할지" 를 알려주는 정보입니다.
 
+### 3.7 save-point 진입 / 이탈 패턴
+
+모든 세션 문서의 **사전 준비 조건 블록 직후** 또는 **§1단계 직전** 에 save-point 진입 명령을 둡니다.
+
+#### 세션 시작 — 시작본을 작업 폴더로
+
+```markdown
+## 시작본 코드 받기
+
+다음 명령을 그대로 복사해 실행합니다. 작업 폴더 `workshop/` 이 만들어지고, 본 세션의 시작본 코드가 그 안에 풀립니다.
+
+\`\`\`bash
+# Linux · macOS · WSL
+mkdir -p workshop && \\
+  cp -a save-points/session-NN/start/. workshop/
+
+# Windows PowerShell
+New-Item -ItemType Directory -Force -Path workshop | Out-Null
+Copy-Item -Path save-points/session-NN/start/* -Destination workshop -Recurse -Force
+\`\`\`
+
+이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
+```
+
+#### 막혔을 때 — 완성본으로 덮어쓰기
+
+세션 docs 의 마지막 `## 마무리` 섹션 직전 또는 `## 주의` 섹션 안에 다음 안내를 둡니다.
+
+```markdown
+> [!TIP]
+> 진행 중 막혔다면 완성본 코드를 그대로 덮어쓰고 어디가 달랐는지 직접 비교할 수 있습니다.
+>
+> \`\`\`bash
+> cp -a save-points/session-NN/complete/. workshop/
+> \`\`\`
+```
+
+#### 마무리
+
+세션 docs 의 `## 마무리` 섹션은 **`save-point` 항목** 으로 시작합니다 (`git tag` 사용 안 함).
+
+```markdown
+## 마무리
+
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-NN/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-(NN+1)/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 위에 덮입니다)
+- **자원 정리** — …
+- **다음 세션 미리보기** — …
+```
+
+> [!IMPORTANT]
+> `git tag session-NN-start` 또는 `git checkout session-NN-start` 같은 git 기반 save-point 표현은 사용하지 않습니다. 본 워크샵의 save-point 메커니즘은 **단일 main 브랜치 + 폴더 복사** 입니다 ([save-points/README.md](../save-points/README.md) 참고).
+
 ---
 
 ## 4. 코드 블록 & 명령어

@@ -8,7 +8,7 @@
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md) ~ [session-04](./04-async-ingestion.md) 완료 — Azure Container Apps · Cosmos DB · PostgreSQL · Managed Redis · Key Vault · User Assigned Managed Identity · Application Insights · 비동기 인제스션 파이프라인이 본인 구독에 존재
-> - `git checkout session-05-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-05/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 
 ---
 
@@ -267,7 +267,7 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 ## 마무리
 
-- **save-point** — `git tag session-05-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-05/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-06/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — App Configuration · Key Vault 는 후속 세션 ([session-06](./06-observability.md)) 에서 계속 사용됩니다. 정리하지 않습니다
 - **다음 세션 미리보기** — [session-06](./06-observability.md) 에서는 지금까지 OpenTelemetry 가 자동으로 잡아주던 trace 를 RAG 의 비즈니스 의미가 담긴 커스텀 span (예: `rag.retrieve`, `rag.generate`, `cache.lookup`, `tokens.prompt`, `tokens.completion`) 으로 격상시키고, KQL Workbook 과 Metric Alert 로 한눈에 보이는 관측성을 구축합니다
 

@@ -8,7 +8,7 @@
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md), [session-01](./01-rag-mvp.md) 완료 — Resource Group · Azure OpenAI · Cosmos DB (벡터 인덱스 + 시드 데이터) · User Assigned Managed Identity 가 본인 구독에 존재
-> - `git checkout session-02-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-02/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 
 ---
 
@@ -264,7 +264,7 @@ curl -X POST "https://$API_FQDN/api/chat" \
 
 ## 마무리
 
-- **save-point** — `git tag session-02-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-02/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-03/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — PostgreSQL Flexible Server 는 후속 세션 (특히 [session-04](./04-async-ingestion.md) 의 비동기 인제스션) 에서 계속 사용됩니다. 정리하지 않습니다
 - **다음 세션 미리보기** — [session-03](./03-redis-cache.md) 에서는 같은 질문을 두 번 호출하면 두 번째 응답을 1ms 수준으로 만드는 Managed Redis 시맨틱 캐시를 도입합니다
 

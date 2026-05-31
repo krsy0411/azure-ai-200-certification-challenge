@@ -8,7 +8,7 @@
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md) ~ [session-05](./05-app-config-flags.md) 완료 — Application Insights · Log Analytics Workspace · Azure Container Apps · 비동기 인제스션 파이프라인 · 시맨틱 캐시 · 피처 플래그 가 본인 구독에 존재
-> - `git checkout session-06-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-06/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 
 ---
 
@@ -271,7 +271,7 @@ done
 
 ## 마무리
 
-- **save-point** — `git tag session-06-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-06/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-07/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — Workbook · Action Group · Metric Alert 는 자체 비용이 거의 없으므로 그대로 두는 것을 권장합니다. Application Insights · Log Analytics Workspace 는 [session-00](./00-setup.md) 부터 사용 중이므로 워크샵 전체 정리 시점에 함께 정리합니다
 - **다음 세션 미리보기** — [session-07](./07-aks.md) 에서는 같은 RAG 워커로드를 Azure Container Apps 대신 Azure Kubernetes Service Job 으로 배포해보고, K8s 매니페스트 · `kubectl` · Container Insights 로 두 호스팅 모델의 트레이드오프를 직접 비교합니다
 

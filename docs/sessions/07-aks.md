@@ -8,7 +8,7 @@
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md) ~ [session-06](./06-observability.md) 완료 — Azure OpenAI · Cosmos DB · Azure Container Registry · User Assigned Managed Identity · Log Analytics Workspace 가 본인 구독에 존재
-> - `git checkout session-07-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-07/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 > - `kubectl` 1.30+ 설치 확인 — [PREREQUISITES.md 의 도구 버전 요구사항](../../PREREQUISITES.md#41-도구-버전-요구사항) 참고
 
 ---
@@ -261,7 +261,7 @@ kubectl logs -l job-name=embedding-reprocess --tail=50
 
 ## 마무리
 
-- **save-point** — `git tag session-07-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-07/complete/` 와 일치합니다. 본 세션이 워크샵의 마지막 세션이므로 다음 `cp -a` 는 없습니다. [자원 정리](../cleanup.md) 절차를 진행합니다
 - **워크샵 종료** — 본 세션이 마지막 세션입니다. 모든 자원의 정리는 [docs/cleanup.md](../cleanup.md) 의 절차를 참고합니다. 정리하지 않으면 Azure Kubernetes Service Load Balancer · Managed Redis Memory_M10 등 idle 자원이 매일 누적되므로 즉시 정리를 권장합니다
 - **자격증 시험 가이드** — Azure AI-200 시험은 본 워크샵에서 다룬 8개 학습 경로 전부를 커버합니다. 시험 응시 전 [README.md 의 AI-200 학습 경로 매핑](../../README.md#ai-200-학습-경로-매핑) 표를 다시 살펴보고, 각 학습 경로 안의 Microsoft Learn 모듈을 정독하는 것을 권장합니다
 

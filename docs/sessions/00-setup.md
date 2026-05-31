@@ -9,7 +9,7 @@
 > **사전 준비 조건**
 >
 > - [PREREQUISITES.md](../../PREREQUISITES.md) 내용 수행
-> - `git checkout session-00-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-00/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 
 ---
 
@@ -187,7 +187,7 @@ text-embedding-3-large     text-embedding-3-large      Standard
 
 ## 마무리
 
-- **save-point** — `git tag session-00-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-00/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-01/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — 이 세션의 자원들은 후속 세션 전부에서 재사용됩니다. **정리하지 않습니다** (워크샵 끝에 한 번에 정리)
 - **다음 세션 미리보기** — session-01 에서는 방금 만든 Azure OpenAI · Key Vault · User Assigned Managed Identity 를 묶어 Azure Container Apps 위에 RAG MVP 를 올립니다
 

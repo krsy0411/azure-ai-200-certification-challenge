@@ -10,7 +10,7 @@
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md) 완료 — Resource Group · Azure OpenAI · Log Analytics · Application Insights · Key Vault · User Assigned Managed Identity 가 본인 구독에 존재
-> - `git checkout session-01-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-01/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 
 ---
 
@@ -290,7 +290,7 @@ curl -X POST "https://$API_FQDN/api/chat" \
 
 ## 마무리
 
-- **save-point** — `git tag session-01-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-01/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-02/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — 이 세션의 자원들은 session-02 이후에서 계속 사용됩니다. 정리하지 않습니다
 - **다음 세션 미리보기** — session-02 에서는 Cosmos DB 만으로는 알 수 없는 PostgreSQL pgvector 의 강점 (표준 SQL 디버깅, `EXPLAIN ANALYZE`) 을 같은 데이터로 직접 비교합니다
 

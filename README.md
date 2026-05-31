@@ -75,12 +75,18 @@
 
 ## 진행 중 막혔을 때 (save-points)
 
-각 세션 시작 시점은 git 태그 `session-NN-start`, 종료 시점은 `session-NN-complete` 입니다. 따라잡기:
+본 워크샵은 git 브랜치 / 태그를 쓰지 않고 **단일 `main` 브랜치 + 폴더 복사** 방식의 save-point 메커니즘을 사용합니다. 학습자는 `save-points/session-NN/{start,complete}/` 안의 코드를 `workshop/` 폴더로 복사해 그 위에서 작업합니다.
 
 ```bash
-# 예: session-03 시작 시점에서 다시 시작하고 싶을 때
-git checkout session-03-start -- apps/ infra/sessions/03-redis-cache/
+# 세션 시작 — 시작본을 작업 폴더로
+mkdir -p workshop && \
+  cp -a save-points/session-03/start/. workshop/
+
+# 막혔을 때 — 완성본으로 덮어쓰기
+cp -a save-points/session-03/complete/. workshop/
 ```
+
+`workshop/` 폴더는 `.gitignore` 에 등록되어 있어 안에서 무엇을 하든 본 저장소의 git 상태는 깨끗하게 유지됩니다. 자세한 사용법은 [save-points/README.md](./save-points/README.md) 를 참고합니다.
 
 자세한 함정과 회피법은 [docs/pitfalls/common.md](./docs/pitfalls/common.md) 에 모았습니다.
 

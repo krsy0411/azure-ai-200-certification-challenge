@@ -56,3 +56,8 @@ data/local/
 *.sqlite
 *.db
 tmp/
+
+# ---- Workshop scratch ----
+# save-points/session-NN/start/ 의 코드를 cp -a 로 펼치는 학습자 작업 폴더.
+# 안에서 무엇을 하든 본 저장소의 git 상태는 영향을 받지 않는다.
+workshop/

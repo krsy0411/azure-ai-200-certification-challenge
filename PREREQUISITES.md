@@ -147,13 +147,13 @@ git config --global --list | grep -E "user\.(name|email)"
 ```bash
 git clone <워크샵-저장소-URL> azure-ai-200-workshop
 cd azure-ai-200-workshop
-
-# 시작 시점 코드로 체크아웃
-git checkout session-00-start
 ```
 
+> [!NOTE]
+> **세션 시작본은 git 브랜치 / 태그가 아닌 폴더 복사로 받습니다** — 본 워크샵은 `save-points/session-NN/{start,complete}/` 폴더에 각 세션의 시작본과 완성본을 동시 보관합니다. 첫 세션 ([session-00](./docs/sessions/00-setup.md)) 진행 시 `cp -a save-points/session-00/start/. workshop/` 명령으로 작업 폴더를 만들고, 그 위에서 학습합니다. 자세한 사용법은 [save-points/README.md](./save-points/README.md) 를 참고합니다.
+
 > [!TIP]
-> **본인 저장소로 Fork 후 진행하는 방법 (선택)** — 학습 진행 상황을 본인 GitHub 에 기록하고 싶다면, 워크샵 저장소를 본인 계정으로 Fork 한 뒤 그 Fork 를 클론합니다. 본인이 작성한 코드를 push 해두면 포트폴리오로 활용할 수 있습니다.
+> **본인 저장소로 Fork 후 진행하는 방법 (선택)** — 학습 진행 상황을 본인 GitHub 에 기록하고 싶다면, 워크샵 저장소를 본인 계정으로 Fork 한 뒤 그 Fork 를 클론합니다. 본인이 작성한 코드는 `workshop/` 폴더 안에 있으나 `.gitignore` 에 등록되어 있으므로, push 하고 싶다면 `git add -f workshop/`. 또는 별도 브랜치를 만들어 본인의 학습 결과물을 보관할 수 있습니다.
 
 ---
 

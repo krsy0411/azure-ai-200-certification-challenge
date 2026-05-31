@@ -9,7 +9,7 @@
 >
 > - [session-00](./00-setup.md), [session-01](./01-rag-mvp.md) 완료 — Azure OpenAI · Azure Container Apps · User Assigned Managed Identity · Application Insights 가 본인 구독에 존재
 > - (선택) [session-02](./02-pgvector.md) 완료 — 두 벡터 백엔드의 latency 베이스라인이 있으면 캐시 효과 측정 시 비교가 풍부함
-> - `git checkout session-03-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-03/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 
 ---
 
@@ -241,7 +241,7 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 ## 마무리
 
-- **save-point** — `git tag session-03-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-03/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-04/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — Managed Redis 는 본 워크샵에서 가장 비싼 idle 자원입니다. 본 세션 학습이 끝났다면 [자원 정리](../cleanup.md) 의 `session-03 의 Redis 만 정리` 절차로 즉시 정리하는 것을 권장합니다. 후속 세션에서 캐시를 다시 쓰고 싶으면 본 세션 Bicep 을 재배포합니다
 - **다음 세션 미리보기** — [session-04](./04-async-ingestion.md) 에서는 동기 호출이 아닌 *비동기 인제스션 파이프라인* 을 구축합니다. PDF 한 장을 Blob Storage 에 업로드하면 Event Grid → Service Bus → Azure Functions 경로로 자동 청크 분할 · 임베드 · 인덱스 적재가 일어납니다
 

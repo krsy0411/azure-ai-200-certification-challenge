@@ -8,7 +8,7 @@
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md), [session-01](./01-rag-mvp.md), [session-02](./02-pgvector.md) 완료 — Azure OpenAI · Cosmos DB · PostgreSQL · User Assigned Managed Identity 가 본인 구독에 존재
-> - `git checkout session-04-start` 명령어 수행
+> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-04/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
 
 > [!NOTE]
 > **용어 안내** — 본 세션의 "인제스션 (ingestion)" 은 외부 데이터를 시스템 안으로 *수집·적재* 하는 행위입니다. "인젝션 (injection — 주입)" 과 헷갈리지 않도록 주의합니다.
@@ -321,7 +321,7 @@ az servicebus message send \
 
 ## 마무리
 
-- **save-point** — `git tag session-04-complete`
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-04/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-05/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — Service Bus · Event Grid · Function App · Storage 는 후속 세션에서 직접 사용되지 않지만, 본 인제스션 파이프라인을 다시 실험하고 싶을 때 그대로 두는 것을 권장합니다. 비용은 Service Bus Standard (월 약 ₩13K) 와 Storage 가 주요 항목입니다. 정리하려면 [자원 정리](../cleanup.md) 의 `session-04 의 Functions + Service Bus + Event Grid 정리` 절차를 참고합니다
 - **다음 세션 미리보기** — [session-05](./05-app-config-flags.md) 에서는 환경변수에 들어있던 `ENABLE_SEMANTIC_CACHE` 같은 토글을 App Configuration 으로 분리해, 코드 재배포 없이 포털에서 토글하는 패턴을 도입합니다
 
