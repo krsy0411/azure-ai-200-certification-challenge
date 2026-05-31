@@ -70,7 +70,7 @@ var aoaiName = take('aoai-${projectId}-${env}-${uniqueString(subscription().id, 
 
 // -------- 1) RG (sub scope) ---------------------------------------------------
 
-module rg '../../modules/resource-group.bicep' = {
+module rg '../../modules/session-00/resource-group.bicep' = {
   name: 'rg-${env}'
   params: {
     name: rgName
@@ -81,7 +81,7 @@ module rg '../../modules/resource-group.bicep' = {
 
 // -------- 2) Log Analytics + Application Insights ------------------------------
 
-module law '../../modules/log-analytics.bicep' = {
+module law '../../modules/session-00/log-analytics.bicep' = {
   scope: resourceGroup(rgName)
   name: 'law'
   params: {
@@ -94,7 +94,7 @@ module law '../../modules/log-analytics.bicep' = {
   ]
 }
 
-module appInsights '../../modules/application-insights.bicep' = {
+module appInsights '../../modules/session-00/application-insights.bicep' = {
   scope: resourceGroup(rgName)
   name: 'appInsights'
   params: {
@@ -107,7 +107,7 @@ module appInsights '../../modules/application-insights.bicep' = {
 
 // -------- 3) Key Vault --------------------------------------------------------
 
-module kv '../../modules/key-vault.bicep' = {
+module kv '../../modules/session-00/key-vault.bicep' = {
   scope: resourceGroup(rgName)
   name: 'kv'
   params: {
@@ -124,7 +124,7 @@ module kv '../../modules/key-vault.bicep' = {
 
 // -------- 4) UAMI (공용) ------------------------------------------------------
 
-module uami '../../modules/user-assigned-identity.bicep' = {
+module uami '../../modules/session-00/user-assigned-identity.bicep' = {
   scope: resourceGroup(rgName)
   name: 'uami'
   params: {
@@ -139,7 +139,7 @@ module uami '../../modules/user-assigned-identity.bicep' = {
 
 // -------- 5) Azure OpenAI account ---------------------------------------------
 
-module aoai '../../modules/aoai-account.bicep' = {
+module aoai '../../modules/session-00/aoai-account.bicep' = {
   scope: resourceGroup(rgName)
   name: 'aoai'
   params: {
@@ -155,7 +155,7 @@ module aoai '../../modules/aoai-account.bicep' = {
 
 // -------- 6) AOAI deployments — 직렬화 (409 Conflict 방지) ---------------------
 
-module aoaiChat '../../modules/aoai-deployment.bicep' = {
+module aoaiChat '../../modules/session-00/aoai-deployment.bicep' = {
   scope: resourceGroup(rgName)
   name: 'aoaiChat'
   params: {
@@ -167,7 +167,7 @@ module aoaiChat '../../modules/aoai-deployment.bicep' = {
   }
 }
 
-module aoaiEmbed '../../modules/aoai-deployment.bicep' = {
+module aoaiEmbed '../../modules/session-00/aoai-deployment.bicep' = {
   scope: resourceGroup(rgName)
   name: 'aoaiEmbed'
   params: {
@@ -185,7 +185,7 @@ module aoaiEmbed '../../modules/aoai-deployment.bicep' = {
 
 // -------- 7) RBAC: UAMI → Cognitive Services OpenAI User -----------------------
 
-module aoaiUserRole '../../modules/role-assignment-aoai-user.bicep' = {
+module aoaiUserRole '../../modules/session-00/role-assignment-aoai-user.bicep' = {
   scope: resourceGroup(rgName)
   name: 'aoaiUserRole-uami'
   params: {
@@ -203,7 +203,7 @@ module aoaiUserRole '../../modules/role-assignment-aoai-user.bicep' = {
 //             로컬 개발 시 az login 자격으로 AOAI 호출 가능하도록.
 //             userObjectId 가 비어있으면 skip.
 
-module aoaiUserRoleUser '../../modules/role-assignment-aoai-user.bicep' = if (!empty(userObjectId)) {
+module aoaiUserRoleUser '../../modules/session-00/role-assignment-aoai-user.bicep' = if (!empty(userObjectId)) {
   scope: resourceGroup(rgName)
   name: 'aoaiUserRole-user'
   params: {
