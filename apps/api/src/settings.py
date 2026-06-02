@@ -19,10 +19,25 @@ class Settings(BaseSettings):
     azure_openai_embed_deployment: str = "text-embedding-3-large"
     azure_openai_api_version: str = "2024-08-01-preview"
 
+    # 벡터 스토어 백엔드 선택 — "cosmos" (session-01) | "pg" (session-02)
+    store_backend: str = "cosmos"
+
     # Cosmos DB
-    cosmos_endpoint: str
+    cosmos_endpoint: str | None = None
     cosmos_database: str = "appdb"
     cosmos_chunks_container: str = "chunks"
+
+    # PostgreSQL pgvector (session-02). store_backend=pg 일 때만 사용.
+    postgres_host: str | None = None
+    postgres_port: int = 5432
+    postgres_database: str = "appdb"
+    # Entra 인증 사용자 — 로컬 개발은 본인 UPN, 컨테이너는 UAMI 이름.
+    postgres_user: str | None = None
+    # B1ms 동시 연결 한도(50)를 고려한 클라이언트 풀 최대 크기.
+    postgres_pool_max_size: int = 10
+    # HNSW 쿼리 정확도. 설정 시 검색 전 SET LOCAL hnsw.ef_search.
+    # 낮추면 빠르지만 recall 저하 — 학습용 시연 (None 이면 서버 기본값 40).
+    hnsw_ef_search: int | None = None
 
     # Application Insights (OpenTelemetry 자동 계측이 사용)
     applicationinsights_connection_string: str | None = None

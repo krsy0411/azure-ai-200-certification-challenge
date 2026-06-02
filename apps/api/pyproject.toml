@@ -21,6 +21,11 @@ dependencies = [
     # Cosmos DB
     "azure-cosmos>=4.7.0",
 
+    # PostgreSQL pgvector (session-02)
+    "psycopg[binary]>=3.2.0",
+    "psycopg-pool>=3.2.0",
+    "pgvector>=0.3.6",
+
     # Observability — Azure Monitor + OpenTelemetry 자동 계측 묶음
     "azure-monitor-opentelemetry>=1.6.0",
 ]

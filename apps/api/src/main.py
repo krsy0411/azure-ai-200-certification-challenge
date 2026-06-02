@@ -18,7 +18,16 @@ from .clients.aoai import build_aoai_client
 from .models import ChatRequest, ChatResponse
 from .rag.chain import run_rag_chain
 from .settings import get_settings
-from .stores.cosmos_store import build_cosmos_client, get_chunks_container
+from .stores.base import VectorStore
+from .stores.cosmos_store import build_cosmos_store
+from .stores.pg_store import build_pg_store
+
+
+async def build_store(settings) -> VectorStore:
+    """STORE_BACKEND 환경변수에 따라 벡터 스토어를 선택해 만든다."""
+    if settings.store_backend == "pg":
+        return await build_pg_store(settings)
+    return build_cosmos_store(settings)
 
 
 @asynccontextmanager
@@ -37,22 +46,18 @@ async def lifespan(app: FastAPI):
         )
 
     aoai_client = build_aoai_client(settings)
-    cosmos_client, cosmos_credential = build_cosmos_client(settings)
-    cosmos_container = await get_chunks_container(cosmos_client, settings)
+    store = await build_store(settings)
 
     app.state.settings = settings
     app.state.aoai_client = aoai_client
-    app.state.cosmos_client = cosmos_client
-    app.state.cosmos_credential = cosmos_credential
-    app.state.cosmos_container = cosmos_container
+    app.state.store = store
 
     try:
         yield
     finally:
-        # 종료 시점 정리 — 토큰 갱신 백그라운드 스레드 등을 안전하게 종료
+        # 종료 시점 정리 — 토큰 갱신 백그라운드 스레드 · 연결 풀을 안전하게 종료
         await aoai_client.close()
-        await cosmos_client.close()
-        await cosmos_credential.close()
+        await store.close()
 
 
 app = FastAPI(
@@ -74,14 +79,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
     """RAG 파이프라인을 통해 답변 생성.
 
     1. 질문 임베딩
-    2. Cosmos DB 벡터 검색으로 chunk top-k 검색
+    2. 선택된 벡터 스토어 (Cosmos DB 또는 PostgreSQL pgvector) 로 chunk top-k 검색
     3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-4o-mini 호출
     """
     try:
         return await run_rag_chain(
             question=request.q,
             aoai_client=app.state.aoai_client,
-            cosmos_container=app.state.cosmos_container,
+            store=app.state.store,
             settings=app.state.settings,
         )
     except Exception as exc:
