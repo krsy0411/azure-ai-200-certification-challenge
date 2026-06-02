@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from azure.monitor.opentelemetry import configure_azure_monitor
 from fastapi import FastAPI, HTTPException
 
+from .cache.semantic import SemanticCache, build_semantic_cache
 from .clients.aoai import build_aoai_client
 from .models import ChatRequest, ChatResponse
 from .rag.chain import run_rag_chain
@@ -48,9 +49,15 @@ async def lifespan(app: FastAPI):
     aoai_client = build_aoai_client(settings)
     store = await build_store(settings)
 
+    # 시맨틱 캐시 — cache_enabled 일 때만 (session-03). 비활성이면 None.
+    cache: SemanticCache | None = None
+    if settings.cache_enabled and settings.redis_host:
+        cache = await build_semantic_cache(settings)
+
     app.state.settings = settings
     app.state.aoai_client = aoai_client
     app.state.store = store
+    app.state.cache = cache
 
     try:
         yield
@@ -58,6 +65,8 @@ async def lifespan(app: FastAPI):
         # 종료 시점 정리 — 토큰 갱신 백그라운드 스레드 · 연결 풀을 안전하게 종료
         await aoai_client.close()
         await store.close()
+        if cache is not None:
+            await cache.close()
 
 
 app = FastAPI(
@@ -88,6 +97,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             aoai_client=app.state.aoai_client,
             store=app.state.store,
             settings=app.state.settings,
+            cache=app.state.cache,
         )
     except Exception as exc:
         # 운영 환경에서는 더 정교한 에러 분류와 재시도 정책이 필요하다.
