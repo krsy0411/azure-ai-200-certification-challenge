@@ -8,70 +8,281 @@
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md), [session-01](./01-rag-mvp.md), [session-02](./02-pgvector.md) 완료 — Azure OpenAI · Cosmos DB · PostgreSQL · User Assigned Managed Identity 가 본인 구독에 존재
-> - 시작본 코드를 작업 폴더로 받기: `cp -a save-points/session-04/start/. workshop/` (자세한 안내는 §시작본 코드 받기)
+> - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
 
 > [!NOTE]
-> **용어 안내** — 본 세션의 "인제스션 (ingestion)" 은 외부 데이터를 시스템 안으로 *수집·적재* 하는 행위입니다. "인젝션 (injection — 주입)" 과 헷갈리지 않도록 주의합니다.
+> **용어 안내** — 본 세션의 "인제스션 (ingestion)" 은 외부 데이터를 시스템 안으로 수집·적재하는 행위입니다. "인젝션 (injection — 주입)" 과 헷갈리지 않도록 주의합니다.
 
 ---
 
 ## 0. 이 세션에서 경험하는 내용
 
-- **한 문장 골** — PDF 또는 Markdown 한 장을 Blob Storage 에 업로드하면 30초 안에 청크 분할 · 임베드 · Cosmos DB · PostgreSQL 양쪽 인덱스에 저장되는 비동기 파이프라인을 직접 경험
+- **한 문장 골** — PDF 또는 Markdown 한 장을 Blob Storage 에 업로드하면 청크 분할 · 임베드 후 Cosmos DB · PostgreSQL 양쪽 인덱스에 자동 저장되는 비동기 파이프라인을 직접 경험
 - **새로 프로비저닝되는 자원**
-  - Service Bus Namespace (Standard 등급) + Queue (`ingest-queue`) + Dead Letter Queue
-  - Event Grid System Topic — Blob Storage 이벤트를 발행
-  - Event Grid Subscription — System Topic 의 이벤트를 Service Bus Queue 로 라우팅
-  - Storage Account `stai200wsdev<고유접미사>` — `documents` 컨테이너 (`allowSharedKeyAccess=false`, OAC + RBAC)
-  - Azure Functions (Flex Consumption Linux, Python v2) — 두 개의 함수
-  - Cosmos DB lease container — change feed trigger 가 사용할 lease (Bicep 으로 사전 생성)
+  - Service Bus Namespace (Standard) + Queue `ingest-queue` + Dead Letter Queue
+  - Storage Account (`allowSharedKeyAccess=false`) — `documents` · `deployments` 컨테이너
+  - Event Grid System Topic (Blob 소스) + Service Bus 로 라우팅하는 Subscription
+  - Azure Functions (Flex Consumption, Python v2) — 함수 2개
+  - Cosmos DB `leases` · `doc_stats` 컨테이너 (change feed)
+- **이 세션의 학습 포인트**
+  - 완성된 Bicep 모듈을 `main.bicep` 에서 그룹별로 조립
+  - Event Grid → Service Bus 전달은 **System Topic 의 관리 ID** 에 Service Bus Data Sender 를 부여
+  - Azure Functions Python v2 트리거 (Service Bus queue trigger + Cosmos change feed trigger) 구현
 - **사용해볼 SDK / CLI**
-  - Azure Functions Python v2 데코레이터 — `@app.service_bus_queue_trigger`, `@app.cosmos_db_trigger`, `@app.blob_trigger`
+  - Azure Functions Python v2 데코레이터 — `@app.service_bus_queue_trigger`, `@app.cosmos_db_trigger`
   - `func azure functionapp publish` — Functions Core Tools 로 배포
-  - `az storage blob upload --auth-mode login` — Entra ID 인증으로 Blob 업로드
+  - `az storage blob upload --auth-mode login` — Entra ID 인증 업로드
 - **Portal 에서 확인할 지표 / 데이터**
-  - Service Bus → 큐 `ingest-queue` → Metrics — Active 메시지 수 그래프가 업로드 직후 튀고 0 으로 복귀
-  - Service Bus → DLQ → Metrics — 0 유지 (실패 없음)
-  - Azure Functions → Invocations — 트리거 실행 카운트 + 실행 시간
-  - Azure Functions → Log stream — 라이브 로그
-  - Event Grid System Topic → Metrics — Publish Events · Delivery Successes 카운트
-  - Cosmos DB → Data Explorer — 새 chunk 등장
+  - Service Bus 큐 `ingest-queue` → Metrics — Active 메시지가 업로드 직후 튀고 0 으로 복귀
+  - Azure Functions → Invocations / Log stream
+  - Event Grid System Topic → Metrics — Publish · Delivery 카운트
+  - Cosmos DB → Data Explorer — 새 chunk + `doc_stats` 집계
+
+> [!TIP]
+> 이 세션은 `Bicep 조립 → 배포 → 함수 코드 채우기 → 함수 배포 → 문서 업로드 E2E → Portal 확인` 흐름으로 진행합니다.
+
+---
+
+## 시작본 코드 받기
+
+[session-03](./03-redis-cache.md) 결과물이 들어 있는 `workshop/` 위에 본 세션 시작본을 덮습니다.
+
+```bash
+# Linux · macOS · WSL
+cp -a save-points/session-04/start/. workshop/
+```
+
+```powershell
+# Windows PowerShell
+Copy-Item -Path save-points/session-04/start/* -Destination workshop -Recurse -Force
+```
+
+이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
+
+학습자가 채우는 파일은 두 개입니다 — `infra/sessions/04-async-ingestion/main.bicep` (모듈 조립), `apps/functions/function_app.py` (트리거 함수). 모듈 11개와 `requirements.txt` · `host.json` 은 완성되어 제공됩니다.
 
 ---
 
 ## 1단계 · 프로비저닝
 
-### 1.1 Bicep 모듈 한눈에 보기
+`workshop/infra/sessions/04-async-ingestion/main.bicep` 을 열고, 그룹별 주석을 찾아 코드를 채웁니다.
 
-이 세션이 배포하는 Bicep 모듈 (`infra/sessions/04-async-ingestion/main.bicep`).
+### 1.1 호출할 모듈 한눈에 보기
 
-- `service-bus-namespace.bicep` — Standard 등급 네임스페이스
-- `service-bus-queue.bicep` — `ingest-queue` + DLQ 정책 (max delivery 5)
-- `event-grid-system-topic.bicep` — Blob Storage 이벤트 소스 System Topic
-- `event-grid-subscription.bicep` — Service Bus Queue 로 라우팅하는 subscription
-- `storage-account.bicep` — `allowSharedKeyAccess=false`, OAC + RBAC
-- `function-app-plan-flex.bicep` — Flex Consumption Linux 플랜
-- `function-app-flex.bicep` — `functionAppConfig.runtime.name=python` 신 스키마
-- `cosmos-lease-container.bicep` — change feed lease container (자동 생성에 의존하지 않음)
-- `role-assignment-servicebus-data-receiver.bicep` — User Assigned Managed Identity → Service Bus 메시지 수신
-- `role-assignment-eventgrid-data-sender.bicep` — User Assigned Managed Identity → Event Grid 이벤트 송신
-- `role-assignment-storage-blob-data-reader.bicep` — User Assigned Managed Identity → Blob 읽기
+`infra/modules/session-04/` 에 완성되어 있는 모듈입니다.
 
-### 1.2 변경사항 미리보기
+- `service-bus-namespace.bicep` · `service-bus-queue.bicep` — Standard 네임스페이스 + `ingest-queue` (DLQ max delivery 5)
+- `storage-account.bicep` — `allowSharedKeyAccess=false`, `documents` · `deployments` 컨테이너
+- `event-grid-system-topic.bicep` · `event-grid-subscription.bicep` — Blob 이벤트 → Service Bus 라우팅
+- `function-app-plan-flex.bicep` · `function-app-flex.bicep` — Flex Consumption + 신 스키마
+- `cosmos-container.bicep` — `leases` · `doc_stats` 컨테이너 (재사용)
+- `role-assignment-servicebus.bicep` · `role-assignment-storage.bicep` — 역할 부여 (재사용)
+
+### 1.2 Service Bus + Storage
+
+`// -------- 1) ...` 과 `// -------- 2) ...` 주석 아래에 추가합니다.
+
+```bicep
+module serviceBus '../../modules/session-04/service-bus-namespace.bicep' = {
+  name: 'serviceBus'
+  params: {
+    name: sbName
+    location: location
+    skuName: 'Standard'
+    tags: commonTags
+  }
+}
+
+module ingestQueue '../../modules/session-04/service-bus-queue.bicep' = {
+  name: 'ingestQueue'
+  params: {
+    namespaceName: serviceBus.outputs.name
+    name: 'ingest-queue'
+    maxDeliveryCount: 5
+  }
+}
+
+module storage '../../modules/session-04/storage-account.bicep' = {
+  name: 'storage'
+  params: {
+    name: stName
+    location: location
+    tags: commonTags
+  }
+}
+```
+
+### 1.3 Event Grid — System Topic + 전달 권한 + Subscription
+
+`// -------- 3) ...` 주석 아래에 추가합니다. 핵심은 **System Topic 의 관리 ID** 에 Service Bus Data Sender 를 부여하는 것입니다 — Event Grid 가 그 ID 로 큐에 전달합니다.
+
+```bicep
+module systemTopic '../../modules/session-04/event-grid-system-topic.bicep' = {
+  name: 'systemTopic'
+  params: {
+    name: egtName
+    location: location
+    sourceStorageAccountId: storage.outputs.id
+    tags: commonTags
+  }
+}
+
+module sbSenderSystemTopic '../../modules/session-04/role-assignment-servicebus.bicep' = {
+  name: 'sbSender-systemTopic'
+  params: {
+    namespaceName: serviceBus.outputs.name
+    roleDefinitionId: roleServiceBusDataSender
+    principalId: systemTopic.outputs.principalId
+  }
+}
+
+module egSubscription '../../modules/session-04/event-grid-subscription.bicep' = {
+  name: 'egSubscription'
+  params: {
+    systemTopicName: systemTopic.outputs.name
+    name: 'to-service-bus'
+    serviceBusQueueId: resourceId(
+      'Microsoft.ServiceBus/namespaces/queues',
+      serviceBus.outputs.name,
+      'ingest-queue'
+    )
+  }
+  dependsOn: [
+    ingestQueue
+    sbSenderSystemTopic
+  ]
+}
+```
+
+### 1.4 역할 할당 — User Assigned Managed Identity + (선택) 사용자
+
+`// -------- 4) ...` 와 `// -------- 4b) ...` 주석 아래에 추가합니다. Function 의 신원에 Service Bus 수신 + Storage Blob/Queue 권한을, 사용자에게는 E2E 테스트용 권한을 부여합니다.
+
+```bicep
+module sbReceiverUami '../../modules/session-04/role-assignment-servicebus.bicep' = {
+  name: 'sbReceiver-uami'
+  params: {
+    namespaceName: serviceBus.outputs.name
+    roleDefinitionId: roleServiceBusDataReceiver
+    principalId: uami.properties.principalId
+  }
+}
+
+module blobOwnerUami '../../modules/session-04/role-assignment-storage.bicep' = {
+  name: 'blobOwner-uami'
+  params: {
+    storageAccountName: storage.outputs.name
+    roleDefinitionId: roleStorageBlobDataOwner
+    principalId: uami.properties.principalId
+  }
+}
+
+module queueContributorUami '../../modules/session-04/role-assignment-storage.bicep' = {
+  name: 'queueContributor-uami'
+  params: {
+    storageAccountName: storage.outputs.name
+    roleDefinitionId: roleStorageQueueDataContributor
+    principalId: uami.properties.principalId
+  }
+}
+
+module blobContributorUser '../../modules/session-04/role-assignment-storage.bicep' = if (!empty(userObjectId)) {
+  name: 'blobContributor-user'
+  params: {
+    storageAccountName: storage.outputs.name
+    roleDefinitionId: roleStorageBlobDataContributor
+    principalId: userObjectId
+    principalType: 'User'
+  }
+}
+
+module sbSenderUser '../../modules/session-04/role-assignment-servicebus.bicep' = if (!empty(userObjectId)) {
+  name: 'sbSender-user'
+  params: {
+    namespaceName: serviceBus.outputs.name
+    roleDefinitionId: roleServiceBusDataSender
+    principalId: userObjectId
+    principalType: 'User'
+  }
+}
+```
+
+### 1.5 Cosmos 컨테이너 + Function App
+
+`// -------- 5) ...` 와 `// -------- 6) ...`, 그리고 `// -------- 출력` 주석 아래에 추가합니다.
+
+```bicep
+module leaseContainer '../../modules/session-04/cosmos-container.bicep' = {
+  name: 'leaseContainer'
+  params: {
+    accountName: cosmos.name
+    name: 'leases'
+    partitionKeyPath: '/id'
+  }
+}
+
+module statsContainer '../../modules/session-04/cosmos-container.bicep' = {
+  name: 'statsContainer'
+  params: {
+    accountName: cosmos.name
+    name: 'doc_stats'
+    partitionKeyPath: '/doc_id'
+  }
+}
+
+module plan '../../modules/session-04/function-app-plan-flex.bicep' = {
+  name: 'plan'
+  params: {
+    name: aspName
+    location: location
+    tags: commonTags
+  }
+}
+
+module functionApp '../../modules/session-04/function-app-flex.bicep' = {
+  name: 'functionApp'
+  params: {
+    name: funcName
+    location: location
+    planId: plan.outputs.id
+    uamiId: uami.id
+    uamiClientId: uami.properties.clientId
+    storageAccountName: storage.outputs.name
+    storageBlobEndpoint: storage.outputs.blobEndpoint
+    deploymentContainerName: storage.outputs.deploymentContainerName
+    appInsightsConnectionString: appInsights.properties.ConnectionString
+    serviceBusFqdn: serviceBus.outputs.fqdn
+    aoaiEndpoint: aoai.properties.endpoint
+    cosmosEndpoint: cosmos.properties.documentEndpoint
+    cosmosDatabaseName: 'appdb'
+    postgresHost: '${pgName}.postgres.database.azure.com'
+    postgresUser: uamiName
+    tags: commonTags
+  }
+  dependsOn: [
+    blobOwnerUami
+    queueContributorUami
+    sbReceiverUami
+  ]
+}
+```
+
+```bicep
+output serviceBusName string = serviceBus.outputs.name
+output storageName string = storage.outputs.name
+output functionAppName string = functionApp.outputs.name
+output systemTopicName string = systemTopic.outputs.name
+```
+
+### 1.6 조립 검증 + 배포
+
+```bash
+az bicep build --file infra/sessions/04-async-ingestion/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
+```
 
 ```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
 
-az deployment group what-if \
-  --resource-group rg-ai200ws-dev \
-  --template-file infra/sessions/04-async-ingestion/main.bicep \
-  --parameters infra/sessions/04-async-ingestion/main.bicepparam \
-  --parameters userObjectId=$OID
-```
-
-### 1.3 실제 배포
-
-```bash
 az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/04-async-ingestion/main.bicep \
@@ -80,29 +291,26 @@ az deployment group create \
 ```
 
 > [!NOTE]
-> Service Bus · Event Grid · Storage Account · Function App 동시 배포에 약 **5~7분** 소요됩니다. 진행되는 동안 [2단계 · 복붙으로 경험해보기](#2단계--복붙으로-경험해보기) 의 이벤트 흐름 다이어그램을 정독합니다.
+> Service Bus · Event Grid · Storage · Function App 동시 배포에 약 **5~7분** 소요됩니다. 진행되는 동안 [2단계 · 복붙으로 경험해보기](#2단계--복붙으로-경험해보기) 의 이벤트 흐름을 정독합니다.
 
-### 1.4 배포 완료 확인
+### 1.7 배포 완료 확인
+
+자원 이름은 글로벌 unique 접미사가 붙으므로 조회해 환경변수에 담아둡니다.
 
 ```bash
-# Function App 이 Running 상태인지 + 신 스키마 (functionAppConfig.runtime) 적용 확인
-az functionapp show \
-  --name func-ai200ws-dev \
-  --resource-group rg-ai200ws-dev \
+FUNC=$(az functionapp list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+SB=$(az servicebus namespace list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+
+# Function App 이 Running + 신 스키마(functionAppConfig.runtime) 적용
+az functionapp show -n $FUNC -g rg-ai200ws-dev \
   --query "{state:state, runtime:functionAppConfig.runtime}" -o jsonc
+
+# 큐가 DLQ 정책과 함께 만들어졌는지
+az servicebus queue show -g rg-ai200ws-dev --namespace-name $SB --name ingest-queue \
+  --query "{status:status, maxDeliveryCount:maxDeliveryCount}" -o jsonc
 ```
 
-기대 — `state: Running`, `runtime: { name: python, version: 3.12 }`.
-
-```bash
-# Service Bus 큐가 DLQ 정책과 함께 만들어졌는지
-az servicebus queue show \
-  --resource-group rg-ai200ws-dev \
-  --namespace-name sb-ai200ws-dev \
-  --name ingest-queue \
-  --query "{status:status, maxDeliveryCount:maxDeliveryCount, dlqEnabled:enableDeadLetteringOnMessageExpiration}" \
-  -o jsonc
-```
+기대 — `state: Running`, `runtime: { name: python, version: 3.12 }`, `maxDeliveryCount: 5`.
 
 ---
 
@@ -110,36 +318,27 @@ az servicebus queue show \
 
 ### 2.1 이벤트 흐름
 
-본 세션의 비동기 인제스션 파이프라인은 다음 흐름으로 동작합니다.
-
 ```mermaid
 flowchart LR
   U(["사용자"]) -- "1. PDF · Markdown 업로드" --> Blob
-
-  Blob[("Blob Storage<br/>documents 컨테이너")] -- "2. Blob Created 이벤트" --> EG
-
+  Blob[("Blob Storage<br/>documents")] -- "2. Blob Created 이벤트" --> EG
   EG{{"Event Grid<br/>System Topic"}} -- "3. subscription 라우팅" --> SBQ
-
   SBQ[("Service Bus<br/>ingest-queue")] -- "4. queue trigger" --> Func
-
-  Func["Function App<br/>on_ingest_message"] -- "5a. Blob 다운로드<br/>(User Assigned Managed Identity)" --> Blob
-  Func -- "5b. 청크 분할<br/>(~500 토큰, overlap 50)" --> Func
+  Func["on_ingest_message"] -- "5a. Blob 다운로드 (MI)" --> Blob
+  Func -- "5b. 청크 분할" --> Func
   Func -- "5c. 배치 임베드" --> AOAI["Azure OpenAI<br/>text-embedding-3-large"]
   Func -- "5d. upsert" --> Cosmos[("Cosmos DB<br/>chunks")]
   Func -- "5d. upsert" --> Pg[("PostgreSQL<br/>chunks")]
-
-  Cosmos -- "6. change feed" --> Lease[("lease container<br/>(Bicep 사전 생성)")]
-  Lease -- "7. change feed trigger" --> Func2["Function App<br/>on_cosmos_change"]
-  Func2 -- "8. 통계 · 다운스트림" --> Stats[("집계 컨테이너")]
-
-  SBQ -. "처리 실패 (max delivery 5)" .-> DLQ[("Service Bus DLQ<br/>ingest-queue/$DeadLetterQueue")]
+  Cosmos -- "6. change feed" --> Lease[("leases<br/>(Bicep 사전 생성)")]
+  Lease -- "7. change feed trigger" --> Func2["on_cosmos_change"]
+  Func2 -- "8. 집계" --> Stats[("doc_stats")]
+  SBQ -. "처리 실패 (max delivery 5)" .-> DLQ[("DLQ")]
 
   classDef store fill:#e1f5fe,stroke:#0277bd,color:#000
   classDef compute fill:#fff3e0,stroke:#e65100,color:#000
   classDef messaging fill:#f3e5f5,stroke:#6a1b9a,color:#000
   classDef ai fill:#e8f5e9,stroke:#2e7d32,color:#000
   classDef fail fill:#ffebee,stroke:#c62828,color:#000
-
   class Blob,Cosmos,Pg,Lease,Stats store
   class Func,Func2 compute
   class EG,SBQ messaging
@@ -148,7 +347,7 @@ flowchart LR
 ```
 
 > [!TIP]
-> **왜 동기 호출이 아닌 큐 기반인가** — 사용자 응답 시간을 빠르게 유지하기 위해서입니다. 임베드 · 청크 분할 같은 무거운 작업은 큐로 빼고, API 는 청크가 준비된 후에만 답합니다. 또한 일시적 실패에 대한 재시도와 DLQ 격리도 자연스럽게 따라옵니다.
+> **왜 동기 호출이 아닌 큐 기반인가** — 임베드·청크 분할 같은 무거운 작업을 큐로 빼면 사용자 응답이 빨라지고, 일시 실패에 대한 재시도와 DLQ 격리가 자연스럽게 따라옵니다. 큰 페이로드(문서 본문)는 메시지에 싣지 않고 Blob URL 만 전달하는 claim-check 패턴을 씁니다.
 
 ### 2.2 왜 Event Grid 와 Service Bus 둘 다 쓰는가
 
@@ -156,106 +355,152 @@ flowchart LR
 |---|---|---|
 | **모델** | 이벤트 라우터 (publish · subscribe) | 메시지 큐 (FIFO · 트랜잭션) |
 | **전달 보장** | At-least-once + 재시도 | At-least-once + DLQ + 순서 보장 |
-| **이벤트 소스** | Blob Storage · Resource Group · 커스텀 등 풍부 | 발신자가 직접 송신 |
-| **백프레셔** | 약함 (이벤트 폭주 시 구독자 책임) | 강함 (큐가 버퍼 역할) |
+| **이벤트 소스** | Blob Storage 등 풍부 | 발신자가 직접 송신 |
+| **백프레셔** | 약함 | 강함 (큐가 버퍼) |
 | **본 워크샵 역할** | Blob 이벤트 → Service Bus 로 라우팅 | Function 처리 큐 + DLQ |
 
-본 워크샵은 Event Grid 의 풍부한 이벤트 소스 + Service Bus 의 신뢰성 있는 큐 처리를 결합한 일반적인 패턴을 따릅니다.
+### 2.3 함수 코드 구현
 
-### 2.3 코드 복사·붙여넣기
+`apps/functions/function_app.py` 의 함수 본체가 비어 있습니다. 트리거 데코레이터·헬퍼·의존성은 제공되며, 아래 본체를 채웁니다.
 
-> [!NOTE]
-> 아래 파일은 그대로 복사해 해당 경로에 붙여넣습니다. 동작 원리는 코드 다음의 줄별 해설에서 다룹니다.
-
-**파일 1** — `apps/functions/function_app.py`
+`_extract_text` · `_upsert_cosmos` · `_upsert_pg` 를 채웁니다.
 
 ```python
-# (Azure Functions Python v2 데코레이터 스타일.
-#  핵심 구성:
-#  1) on_ingest_message (@app.service_bus_queue_trigger)
-#     - 큐 메시지에서 Blob URL 추출
-#     - User Assigned Managed Identity 로 Blob 다운로드 (Storage Blob Data Reader)
-#     - 텍스트 추출 + 청크 분할 (약 500 토큰, overlap 50)
-#     - Azure OpenAI 배치 임베드 (text-embedding-3-large)
-#     - Cosmos DB + PostgreSQL 양쪽 upsert
-#     - 처리 실패 시 자동 재시도 (max delivery 5) → DLQ
-#  2) on_cosmos_change (@app.cosmos_db_trigger)
-#     - lease container 는 Bicep 으로 사전 생성된 것을 참조
-#     - 새 chunk 등장 시 집계 컨테이너 갱신
-#  주의:
-#  - query_items 에 partition_key 명시 (cross-partition RU 폭주 방지)
-#  - Flex Consumption 이라 FUNCTIONS_WORKER_RUNTIME 환경변수 사용 안 함
-#  실제 코드 본문은 후속 구현 단계에서 작성합니다.)
+def _extract_text(blob_name: str, raw: bytes) -> str:
+    if blob_name.lower().endswith(".pdf"):
+        import io
+
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(raw))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    return raw.decode("utf-8", errors="ignore")
+
+
+def _upsert_cosmos(doc_id: str, chunks: list[str], embeddings: list[list[float]]) -> None:
+    container = _cosmos_container("chunks")
+    for i, (content, emb) in enumerate(zip(chunks, embeddings, strict=True)):
+        container.upsert_item(
+            {"id": f"{doc_id}-{i}", "doc_id": doc_id, "title": doc_id,
+             "content": content, "embedding": emb}
+        )
+
+
+def _upsert_pg(doc_id: str, chunks: list[str], embeddings: list[list[float]]) -> None:
+    token = _credential.get_token(_PG_AAD_SCOPE).token
+    conninfo = (
+        f"host={os.environ['POSTGRES_HOST']} port=5432 "
+        f"dbname={os.environ.get('POSTGRES_DATABASE', 'appdb')} "
+        f"user={os.environ['POSTGRES_USER']} password={token} sslmode=require"
+    )
+    with psycopg.connect(conninfo) as conn:
+        register_vector(conn)
+        with conn.cursor() as cur:
+            for i, (content, emb) in enumerate(zip(chunks, embeddings, strict=True)):
+                cur.execute(
+                    "INSERT INTO chunks (id, doc_id, title, content, embedding) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, "
+                    "embedding = EXCLUDED.embedding",
+                    (f"{doc_id}-{i}", doc_id, doc_id, content, HalfVector(emb)),
+                )
 ```
 
-**파일 2** — `apps/functions/requirements.txt`
+두 트리거 함수 `on_ingest_message` · `on_cosmos_change` 본체를 채웁니다.
 
-```text
-azure-functions
-azure-identity
-azure-storage-blob
-azure-cosmos
-openai
-psycopg[binary]
-pgvector
+```python
+@app.service_bus_queue_trigger(
+    arg_name="msg", queue_name="ingest-queue", connection="ServiceBusConnection"
+)
+def on_ingest_message(msg: func.ServiceBusMessage) -> None:
+    event = json.loads(msg.get_body().decode("utf-8"))
+    if isinstance(event, list):
+        event = event[0]
+    blob_url = event["data"]["url"]
+
+    blob_name = urlparse(blob_url).path.split("/", 2)[-1]
+    doc_id = _doc_id_from_blob(blob_name)
+
+    raw = BlobClient.from_blob_url(blob_url, credential=_credential).download_blob().readall()
+    chunks = _chunk_text(_extract_text(blob_name, raw))
+    if not chunks:
+        logging.warning("[on_ingest_message] %s — 텍스트 없음, skip", blob_name)
+        return
+
+    client = _aoai()
+    deployment = os.environ.get("AZURE_OPENAI_EMBED_DEPLOYMENT", "text-embedding-3-large")
+    embeddings = [d.embedding for d in client.embeddings.create(model=deployment, input=chunks).data]
+
+    _upsert_cosmos(doc_id, chunks, embeddings)
+    _upsert_pg(doc_id, chunks, embeddings)
+    logging.info("[on_ingest_message] processed %s → %d chunks", blob_name, len(chunks))
+
+
+@app.cosmos_db_trigger(
+    arg_name="docs", connection="CosmosDbConnection", database_name="appdb",
+    container_name="chunks", lease_container_name="leases",
+    create_lease_container_if_not_exists=False,
+)
+def on_cosmos_change(docs: func.DocumentList) -> None:
+    if not docs:
+        return
+    counts: dict[str, int] = {}
+    for doc in docs:
+        doc_id = doc.get("doc_id")
+        if doc_id:
+            counts[doc_id] = counts.get(doc_id, 0) + 1
+
+    stats = _cosmos_container("doc_stats")
+    for doc_id, delta in counts.items():
+        try:
+            item = stats.read_item(item=doc_id, partition_key=doc_id)
+            item["chunk_count"] = item.get("chunk_count", 0) + delta
+        except Exception:  # noqa: BLE001
+            item = {"id": doc_id, "doc_id": doc_id, "chunk_count": delta}
+        stats.upsert_item(item)
 ```
 
 ### 2.4 함수 배포
 
 ```bash
 cd apps/functions
-
-# Functions Core Tools 로 클라우드 빌드 + 배포
-func azure functionapp publish func-ai200ws-dev --python --build remote
-
+func azure functionapp publish $FUNC --python --build remote
 cd ../..
 ```
 
-### 2.5 E2E 테스트 — 샘플 문서 업로드 후 양쪽 인덱스에 도착했는지 확인
+### 2.5 E2E 테스트 — 업로드 후 양쪽 인덱스 도착 확인
 
 ```bash
-# 1) 샘플 markdown 만들기
+# 1) 샘플 markdown
 cat > /tmp/sample-policy.md <<'EOF'
 # 휴가 규정
-
 - 연간 휴가는 15일입니다.
 - 6개월 근속 후부터 사용 가능합니다.
-- 휴가 사용 시 최소 3일 전에 신청합니다.
 EOF
 
-# 2) Blob 업로드 — Entra ID 인증으로
-STORAGE=$(az storage account list -g rg-ai200ws-dev \
-  --query "[?starts_with(name,'st')].name | [0]" -o tsv)
+# 2) Entra ID 인증 업로드
+STORAGE=$(az storage account list -g rg-ai200ws-dev --query "[?starts_with(name,'st')].name | [0]" -o tsv)
+az storage blob upload --account-name $STORAGE --container-name documents \
+  --file /tmp/sample-policy.md --name policy/sample-policy.md --auth-mode login
 
-az storage blob upload \
-  --account-name $STORAGE \
-  --container-name documents \
-  --file /tmp/sample-policy.md \
-  --name policy/sample-policy.md \
-  --auth-mode login
-
-# 3) 30초 대기 후 Cosmos DB 에 도착했는지 확인
+# 3) 약 30초 후 Cosmos 확인
 sleep 30
-
-az cosmosdb sql query \
-  --account-name cosmos-ai200ws-dev \
-  --database-name appdb \
-  --container-name chunks \
+COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+az cosmosdb sql query --account-name $COSMOS --database-name appdb --container-name chunks \
   --query-text "SELECT VALUE COUNT(1) FROM c WHERE c.doc_id = 'sample-policy'" \
   --partition-key-value "sample-policy"
 ```
 
-기대 — 0 이 아닌 정수 (청크 개수, 일반적으로 1~3 개).
+기대 — 0 이 아닌 정수 (청크 개수).
 
 ```bash
-# 4) PostgreSQL 에도 도착했는지 확인
+# 4) PostgreSQL 도 확인
+PG_HOST=$(az postgres flexible-server list -g rg-ai200ws-dev --query "[0].fullyQualifiedDomainName" -o tsv)
 UPN=$(az ad signed-in-user show --query userPrincipalName -o tsv)
 
 PGPASSWORD=$(az account get-access-token \
-  --resource-url https://ossrdbms-aad.database.windows.net \
-  --query accessToken -o tsv) \
-psql "host=pg-ai200ws-dev.postgres.database.azure.com \
-  port=5432 dbname=appdb user=$UPN sslmode=require" \
+  --resource-url https://ossrdbms-aad.database.windows.net --query accessToken -o tsv) \
+psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
   -c "SELECT COUNT(*) FROM chunks WHERE doc_id = 'sample-policy';"
 ```
 
@@ -265,65 +510,66 @@ psql "host=pg-ai200ws-dev.postgres.database.azure.com \
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
-1. **Service Bus `sb-ai200ws-dev`** → 큐 `ingest-queue` → **Metrics** → 다음 두 메트릭 추가
-   - `Active Messages` — 업로드 직후 1 로 튀었다가 처리 후 0 으로 복귀
-   - `Dead-lettered Messages` — 0 유지 (실패 없음 검증)
-2. **Service Bus** → 큐 `ingest-queue` → **Service Bus Explorer** → Peek 으로 처리 중인 메시지 본문 확인 (이미 처리된 경우 비어 있음)
-3. **Function App `func-ai200ws-dev`** → **Functions** → `on_ingest_message` → **Invocations** — 실행 1건이 `Success` 상태로, duration 약 2~5초
-4. **Function App** → **Log stream** — 라이브 로그에서 `[on_ingest_message] processed sample-policy.md → N chunks` 형태의 출력 확인
-5. **Event Grid System Topic** → **Topics** → **Metrics** → `Publish Events`, `Delivery Successes` 카운트 1 증가
-6. **Cosmos DB** → **Data Explorer** → `chunks` 컨테이너에서 다음 쿼리 실행
-
-   ```sql
-   SELECT * FROM c WHERE c.doc_id = 'sample-policy'
-   ```
-
-   결과에 청크 객체들이 노출되어야 합니다.
+1. **Service Bus** → 큐 `ingest-queue` → **Metrics** → `Active Messages` (업로드 직후 1 → 0), `Dead-lettered Messages` (0 유지)
+2. **Function App** → **Functions** → `on_ingest_message` → **Invocations** — 실행 1건 `Success`, duration 약 2~5초
+3. **Function App** → **Log stream** — `[on_ingest_message] processed sample-policy.md → N chunks`
+4. **Event Grid System Topic** → **Metrics** — `Publish Events` · `Delivery Successes` 카운트 1 증가
+5. **Cosmos DB** → **Data Explorer** → `chunks` 에서 `SELECT * FROM c WHERE c.doc_id = 'sample-policy'`, `doc_stats` 에서 집계 카운트 확인
 
 ### 실패 시뮬레이션 (선택)
 
-DLQ 동작을 직접 보고 싶을 때 의도적으로 잘못된 메시지를 큐에 보냅니다.
-
 ```bash
-# 잘못된 형식의 메시지를 큐에 직접 송신 → 5회 재시도 후 DLQ 로 이동
-az servicebus message send \
-  --resource-group rg-ai200ws-dev \
-  --namespace-name sb-ai200ws-dev \
-  --queue-name ingest-queue \
-  --body '{"invalid": true}'
+# 잘못된 메시지를 큐에 직접 송신 → 5회 재시도 후 DLQ
+az servicebus message send -g rg-ai200ws-dev --namespace-name $SB \
+  --queue-name ingest-queue --body '{"invalid": true}'
 ```
 
-약 1~2분 후 Portal Service Bus → 큐 `ingest-queue` → **Dead-lettered Messages** 카운트가 1 로 증가하는 것을 확인합니다.
+약 1~2분 후 Portal 의 **Dead-lettered Messages** 카운트가 1 로 증가합니다.
+
+---
+
+## Microsoft Learn 경로 커버리지 — 사용 / 생략
+
+[Integrate backend services for AI solutions](https://learn.microsoft.com/ko-kr/training/paths/integrate-backend-services-ai-solutions/) 학습 경로 3개 모듈을 본 세션에서 어떻게 다루는지 정리합니다.
+
+| 모듈 | 단원 핵심 | 본 세션 |
+|---|---|---|
+| **1. Service Bus 로 AI 작업 큐** | 메시징 개념 · 큐 vs 토픽 · 메시지 구조화(claim-check·correlation) · peek-lock·DLQ | **사용** — 큐(`ingest-queue`) + DLQ(max delivery 5) + claim-check(Blob URL 전달) (1.2 · 3.x) |
+| **2. Event Grid 이벤트 기반 워크플로** | 개념·패턴 · 이벤트 스키마/필터 · 배달·재시도·dead-letter · 커스텀 이벤트 게시 | **일부 사용** — Blob System Topic → Service Bus 전달, BlobCreated 필터, 재시도. **생략** — 커스텀 이벤트 게시(AI 앱이 직접 발행)는 범위 외 |
+| **3. Functions 서버리스 AI 백엔드** | 호스팅(Flex vs Premium) · 로컬 개발 · 트리거·바인딩 · 비밀·구성 · ID·액세스 | **사용** — Flex Consumption + 신 스키마, Service Bus/Cosmos 트리거, Managed Identity 바인딩. **생략** — 연습의 MCP 서버 시나리오(인제스션과 무관, Phase 10 후보) |
+
+> [!NOTE]
+> **학습 경로보다 깊이 다루는 부분** — Flex Consumption 신 스키마, Storage `allowSharedKeyAccess=false` 시 Functions 부팅 함정, Cosmos change feed lease container 사전 생성, Event Grid → Service Bus 전달을 위한 System Topic 관리 ID RBAC 는 실전 함정으로 본 세션이 보강합니다.
 
 ---
 
 ## 주의
 
 > [!CAUTION]
-> **Cosmos DB change feed trigger lease container 자동 생성은 control plane RBAC 부재 시 silent 실패** — Azure Functions 호스트는 정상 동작하는 것처럼 보이고 에러도 0건이지만 trigger 가 fire 하지 않습니다. 본 워크샵의 Bicep 은 lease container 를 사전 생성합니다 ([docs/pitfalls/common.md](../pitfalls/common.md#cosmos-change-feed-lease-container-silent-fail-session-04) 참고).
+> **Cosmos change feed lease container 자동 생성은 control plane RBAC 부재 시 silent 실패** — 호스트는 정상으로 보이지만 trigger 가 fire 하지 않습니다. 본 워크샵 Bicep 은 `leases` 컨테이너를 사전 생성합니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).
 
 > [!WARNING]
-> **Flex Consumption 은 신 스키마 사용** — 환경변수 `FUNCTIONS_WORKER_RUNTIME=python` 이 무시됩니다. Bicep 에서 `functionAppConfig.runtime.name = 'python'` 형태의 신 스키마를 사용해야 runtime 이 인식됩니다.
+> **Flex Consumption 은 신 스키마 사용** — 환경변수 `FUNCTIONS_WORKER_RUNTIME` 이 무시됩니다. Bicep 에서 `functionAppConfig.runtime.name = 'python'` 형태를 사용해야 runtime 이 인식됩니다.
 
 > [!WARNING]
-> **Storage Account `allowSharedKeyAccess=false` 일 때 Azure Functions 부팅 실패** — Function 호스트가 Storage 에 SharedKey 로 접근하려는 동작을 차단당해 시작 직후 stop 상태가 됩니다. OAC + User Assigned Managed Identity 에 `Storage Blob Data Owner` + `Storage Queue Data Contributor` + `Storage Table Data Contributor` 역할 부여가 필수입니다.
+> **Storage `allowSharedKeyAccess=false` 일 때 Functions 부팅 실패** — 호스트가 SharedKey 로 접근하려다 차단당해 시작 직후 stop 됩니다. User Assigned Managed Identity 에 `Storage Blob Data Owner` + `Storage Queue Data Contributor` 부여 + `AzureWebJobsStorage__credential=managedidentity` 설정이 필수입니다.
 
 > [!CAUTION]
-> **Cosmos DB `query_items` 에 `partition_key` 명시** — cross-partition query 는 모든 파티션을 fan-out 스캔해 RU 가 폭주하고 throttling 429 가 발생합니다. 가능하면 항상 `partition_key` 명시합니다.
+> **Event Grid → Service Bus 전달 권한은 System Topic 의 관리 ID 에** — User Assigned Managed Identity 가 아니라 System Topic 의 SystemAssigned 관리 ID 에 `Azure Service Bus Data Sender` 를 부여해야 전달됩니다. 전달이 0 이면 이 역할 부여를 확인합니다.
+
+> [!CAUTION]
+> **Cosmos DB `query_items` 에 `partition_key` 명시** — cross-partition query 는 모든 파티션을 fan-out 스캔해 RU 가 폭주하고 throttling 429 가 발생합니다.
 
 > [!NOTE]
-> **`identity.type='UserAssigned'` 자원은 `identity.principalId` 미노출** — `userAssignedIdentities[id].principalId` 형태로 접근해야 합니다. Bicep output 작성 시 주의합니다.
-
-> [!IMPORTANT]
-> 더 자세한 함정 모음은 [docs/pitfalls/common.md](../pitfalls/common.md) 의 [비동기 · 메시징](../pitfalls/common.md#비동기--메시징) 섹션을 참고합니다.
+> **`identity.type='UserAssigned'` 자원은 `identity.principalId` 미노출** — `userAssignedIdentities[id].principalId` 로 접근합니다.
 
 ---
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-04/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `cp -a save-points/session-05/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
-- **자원 정리** — Service Bus · Event Grid · Function App · Storage 는 후속 세션에서 직접 사용되지 않지만, 본 인제스션 파이프라인을 다시 실험하고 싶을 때 그대로 두는 것을 권장합니다. 비용은 Service Bus Standard (월 약 ₩13K) 와 Storage 가 주요 항목입니다. 정리하려면 [자원 정리](../cleanup.md) 의 `session-04 의 Functions + Service Bus + Event Grid 정리` 절차를 참고합니다
-- **다음 세션 미리보기** — [session-05](./05-app-config-flags.md) 에서는 환경변수에 들어있던 `ENABLE_SEMANTIC_CACHE` 같은 토글을 App Configuration 으로 분리해, 코드 재배포 없이 포털에서 토글하는 패턴을 도입합니다
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-04/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-05/start/. workshop/` 를 실행합니다
+- **자원 정리** — Service Bus · Function App · Storage 는 후속 세션에서 직접 사용되지 않고 idle 비용·관리면이 누적됩니다. 본 세션 학습이 끝났다면 [자원 정리](../cleanup.md) 로 정리하는 것을 권장합니다 (Log Analytics · ACR 같은 무료 자원은 보존). 다시 실험하려면 본 세션 Bicep 을 재배포합니다
+- **다음 세션 미리보기** — [session-05](./05-app-config-flags.md) 에서는 환경변수에 들어있던 `CACHE_ENABLED` 같은 토글을 App Configuration 으로 분리해, 코드 재배포 없이 포털에서 토글하는 패턴을 도입합니다
 
 ---
 
