@@ -1,0 +1,8 @@
+azure-functions
+azure-identity
+azure-storage-blob
+azure-cosmos
+openai
+psycopg[binary]
+pgvector
+pypdf
