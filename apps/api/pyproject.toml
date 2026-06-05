@@ -30,6 +30,10 @@ dependencies = [
     "redis>=5.0.0",
     "redis-entraid>=1.0.0",
 
+    # App Configuration 피처 플래그 (session-05)
+    "azure-appconfiguration-provider>=2.0.0",
+    "featuremanagement>=2.0.0",
+
     # Observability — Azure Monitor + OpenTelemetry 자동 계측 묶음
     "azure-monitor-opentelemetry>=1.6.0",
 ]

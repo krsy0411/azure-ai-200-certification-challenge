@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException
 
 from .cache.semantic import SemanticCache, build_semantic_cache
 from .clients.aoai import build_aoai_client
+from .config.loader import AppConfig, load_app_config
 from .models import ChatRequest, ChatResponse
 from .rag.chain import run_rag_chain
 from .settings import get_settings
@@ -24,9 +25,9 @@ from .stores.cosmos_store import build_cosmos_store
 from .stores.pg_store import build_pg_store
 
 
-async def build_store(settings) -> VectorStore:
-    """STORE_BACKEND 환경변수에 따라 벡터 스토어를 선택해 만든다."""
-    if settings.store_backend == "pg":
+async def build_store(settings, backend: str) -> VectorStore:
+    """선택된 백엔드로 벡터 스토어를 만든다 (cosmos | pg)."""
+    if backend == "pg":
         return await build_pg_store(settings)
     return build_cosmos_store(settings)
 
@@ -47,17 +48,30 @@ async def lifespan(app: FastAPI):
         )
 
     aoai_client = build_aoai_client(settings)
-    store = await build_store(settings)
 
-    # 시맨틱 캐시 — cache_enabled 일 때만 (session-03). 비활성이면 None.
+    # App Configuration — 설정되면 피처 플래그로 동작을 제어 (session-05).
+    app_config: AppConfig | None = None
+    if settings.app_config_endpoint:
+        app_config = await load_app_config(settings)
+
+    # 백엔드 선택 — enable_pg_backend 플래그가 있으면 그 값을, 없으면 환경변수를 따른다.
+    # (백엔드 전환은 시작 시 1회 — 캐시 토글과 달리 런타임 전환은 재시작 필요)
+    backend = settings.store_backend
+    if app_config is not None and app_config.is_enabled("enable_pg_backend"):
+        backend = "pg"
+    store = await build_store(settings, backend)
+
+    # 시맨틱 캐시 — Redis 가 구성돼 있으면 객체를 만들어 둔다. 실제 사용 여부는
+    # 요청마다 enable_semantic_cache 플래그로 결정 (App Configuration 없으면 cache_enabled).
     cache: SemanticCache | None = None
-    if settings.cache_enabled and settings.redis_host:
+    if settings.redis_host and (settings.cache_enabled or app_config is not None):
         cache = await build_semantic_cache(settings)
 
     app.state.settings = settings
     app.state.aoai_client = aoai_client
     app.state.store = store
     app.state.cache = cache
+    app.state.app_config = app_config
 
     try:
         yield
@@ -67,6 +81,8 @@ async def lifespan(app: FastAPI):
         await store.close()
         if cache is not None:
             await cache.close()
+        if app_config is not None:
+            await app_config.close()
 
 
 app = FastAPI(
@@ -90,14 +106,25 @@ async def chat(request: ChatRequest) -> ChatResponse:
     1. 질문 임베딩
     2. 선택된 벡터 스토어 (Cosmos DB 또는 PostgreSQL pgvector) 로 chunk top-k 검색
     3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-4o-mini 호출
+
+    시맨틱 캐시 사용 여부는 App Configuration 의 enable_semantic_cache 플래그로 매 요청
+    평가한다 (포털 토글이 30~60초 안에 반영). App Configuration 이 없으면 시작 시 구성을 따른다.
     """
+    cache = app.state.cache
+    app_config: AppConfig | None = app.state.app_config
+    if app_config is not None:
+        # 폴링 주기에 맞춰 플래그 변경을 반영한 뒤 평가
+        await app_config.refresh()
+        if not app_config.is_enabled("enable_semantic_cache"):
+            cache = None
+
     try:
         return await run_rag_chain(
             question=request.q,
             aoai_client=app.state.aoai_client,
             store=app.state.store,
             settings=app.state.settings,
-            cache=app.state.cache,
+            cache=cache,
         )
     except Exception as exc:
         # 운영 환경에서는 더 정교한 에러 분류와 재시도 정책이 필요하다.

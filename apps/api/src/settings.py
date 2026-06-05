@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 86400  # 24h
     cache_vector_dim: int = 3072  # text-embedding-3-large
 
+    # App Configuration 피처 플래그 (session-05). 설정되면 캐시·백엔드 토글을
+    # 환경변수 대신 피처 플래그로 평가. 비어 있으면 환경변수 기반으로 동작.
+    app_config_endpoint: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
