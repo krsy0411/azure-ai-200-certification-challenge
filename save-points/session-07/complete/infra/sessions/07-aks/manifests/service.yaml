@@ -1,0 +1,13 @@
+# LoadBalancer 로 외부 노출 — Public IP 가 idle 비용을 발생시키므로 학습 후 정리.
+apiVersion: v1
+kind: Service
+metadata:
+  name: apps-api
+  namespace: default
+spec:
+  type: LoadBalancer
+  selector:
+    app: apps-api
+  ports:
+    - port: 80
+      targetPort: 8000

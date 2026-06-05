@@ -1,0 +1,7 @@
+# 시작본 stub — apps/api Service 매니페스트를 직접 작성한다.
+# 완성본은 save-points/session-07/complete/ 또는 docs/sessions/07-aks.md 참고.
+#
+# 작성할 것 (학습 경로 모듈 1 — Service 로 노출):
+# - apiVersion: v1, kind: Service, metadata.name: apps-api (namespace: default)
+# - spec.type: LoadBalancer, selector app: apps-api
+# - ports: port 80 → targetPort 8000

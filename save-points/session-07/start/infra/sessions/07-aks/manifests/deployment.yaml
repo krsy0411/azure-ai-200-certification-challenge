@@ -1,0 +1,13 @@
+# 시작본 stub — apps/api Deployment 매니페스트를 직접 작성한다.
+# 완성본은 save-points/session-07/complete/ 또는 docs/sessions/07-aks.md 참고.
+#
+# 작성할 것 (학습 경로 모듈 1 — Deployment manifest):
+# - apiVersion: apps/v1, kind: Deployment, metadata.name: apps-api (namespace: default)
+# - spec.replicas: 2, selector/template label app: apps-api
+# - template.metadata.labels 에 azure.workload.identity/use: "true" (Workload Identity)
+# - spec.serviceAccountName: apps-api-sa
+# - container: image __ACR_LOGIN_SERVER__/api:s01, containerPort 8000
+#   - envFrom configMapRef apps-api-config
+#   - env AZURE_CLIENT_ID = "__UAMI_CLIENT_ID__"
+#   - readiness/liveness probe httpGet /healthz:8000
+#   - resources requests/limits (250m/512Mi ~ 500m/1Gi)
