@@ -13,9 +13,8 @@ session-03 에서 임베딩 직후 시맨틱 캐시 lookup 이 추가됐다 — 
 건너뛰고 캐시된 응답을 즉시 반환한다. `cache` 가 None 이면 (cache_enabled=false) 캐시 계층은
 없는 것처럼 동작한다.
 
-후속 세션에서 이 파이프라인이 확장된다.
-- session-05 — 피처 플래그로 캐시 ON/OFF 토글
-- session-06 — 각 단계에 OpenTelemetry 커스텀 span 부여
+session-06 에서 retrieve · generate 단계에 커스텀 OpenTelemetry span 과 토큰/캐시
+메트릭이 부여됐다 (자동 request span 의 자식으로 중첩).
 """
 
 from openai import AsyncAzureOpenAI
@@ -23,6 +22,7 @@ from openai import AsyncAzureOpenAI
 from ..cache.semantic import SemanticCache
 from ..clients.aoai import chat_with_context, embed_text
 from ..models import ChatResponse, Source
+from ..observability.spans import rag_span, record_cache, record_tokens
 from ..settings import Settings
 from ..stores.base import VectorStore
 
@@ -39,17 +39,20 @@ async def run_rag_chain(
     # 1) embed — 질문을 임베딩 벡터로 변환
     query_embedding = await embed_text(aoai_client, settings, question)
 
-    # 1.5) 시맨틱 캐시 lookup — hit 면 RAG 를 우회해 즉시 반환
+    # 1.5) 시맨틱 캐시 lookup — hit 면 RAG 를 우회해 즉시 반환. 결과를 메트릭으로 발행.
     if cache is not None:
         cached = await cache.lookup(query_embedding)
+        record_cache(cached is not None)
         if cached is not None:
             return cached
 
     # 2) retrieve — 선택된 벡터 스토어에서 가장 가까운 chunk 메타데이터 검색
-    sources: list[Source] = await store.vector_search(
-        query_embedding,
-        top_k=settings.retrieval_top_k,
-    )
+    with rag_span("rag.retrieve") as span:
+        sources: list[Source] = await store.vector_search(
+            query_embedding,
+            top_k=settings.retrieval_top_k,
+        )
+        span.set_attribute("retrieval.count", len(sources))
 
     if not sources:
         return ChatResponse(
@@ -66,8 +69,14 @@ async def run_rag_chain(
             contents.append(f"## {heading}\n{content}")
     context = "\n\n".join(contents)
 
-    # 3) generate — gpt-4o-mini 가 컨텍스트 기반 답변 생성
-    answer = await chat_with_context(aoai_client, settings, question, context)
+    # 3) generate — gpt-4o-mini 가 컨텍스트 기반 답변 생성. 토큰 수를 span/메트릭에 기록.
+    with rag_span("rag.generate") as span:
+        answer, prompt_tokens, completion_tokens = await chat_with_context(
+            aoai_client, settings, question, context
+        )
+        span.set_attribute("tokens.prompt", prompt_tokens)
+        span.set_attribute("tokens.completion", completion_tokens)
+        record_tokens(prompt_tokens, completion_tokens)
     response = ChatResponse(answer=answer, sources=sources)
 
     # 4) 캐시 store — miss 였던 응답을 시맨틱 캐시에 저장 (다음 paraphrase 호출이 hit)

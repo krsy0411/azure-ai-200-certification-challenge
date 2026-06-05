@@ -99,6 +99,12 @@ async def healthz() -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.post("/api/_chaos")
+async def chaos() -> None:
+    """의도적으로 500 을 반환해 오류율·알림(session-06)을 검증한다."""
+    raise HTTPException(status_code=500, detail="intentional chaos")
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """RAG 파이프라인을 통해 답변 생성.

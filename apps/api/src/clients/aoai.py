@@ -55,12 +55,15 @@ async def chat_with_context(
     settings: Settings,
     question: str,
     context: str,
-) -> str:
+) -> tuple[str, int, int]:
     """검색된 chunk 컨텍스트와 질문을 받아 `gpt-4o-mini` 로 답변 생성.
 
     프롬프트 전략 — 시스템 메시지로 RAG 규칙을 고정하고, 사용자 메시지에
     `context` 와 `question` 을 분리해 전달한다. 학습용 단순 형태로, 본격 운영
     환경에서는 더 정교한 프롬프트 엔지니어링과 인용 처리가 필요하다.
+
+    반환 — (답변 텍스트, 프롬프트 토큰 수, 컴플리션 토큰 수). 토큰 수는 session-06
+    의 커스텀 span/메트릭에서 사용한다.
     """
     system_prompt = (
         "당신은 사내 문서를 근거로 답변하는 AI 어시스턴트입니다. "
@@ -78,4 +81,7 @@ async def chat_with_context(
         temperature=0.2,
         max_tokens=512,
     )
-    return response.choices[0].message.content or ""
+    usage = response.usage
+    prompt_tokens = usage.prompt_tokens if usage else 0
+    completion_tokens = usage.completion_tokens if usage else 0
+    return (response.choices[0].message.content or "", prompt_tokens, completion_tokens)
