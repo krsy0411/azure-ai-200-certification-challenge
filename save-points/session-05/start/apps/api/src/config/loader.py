@@ -43,7 +43,7 @@ class AppConfig:
 async def load_app_config(settings: Settings) -> AppConfig:
     # 힌트: DefaultAzureCredential() 로 endpoint=settings.app_config_endpoint 에 load().
     # Key Vault reference 해석을 위해 keyvault_credential=credential 전달.
-    # 동적 토글에는 네 가지가 모두 필요: feature_flags_enabled=True,
+    # 동적 토글에는 네 가지가 모두 필요: feature_flag_enabled=True,
     # feature_flag_refresh_enabled=True, refresh_on=[WatchKey(_SENTINEL_KEY)],
     # refresh_interval=_REFRESH_INTERVAL_SECONDS. 그 뒤 AppConfig(provider, credential) 반환.
     raise NotImplementedError("load_app_config 를 구현하세요.")

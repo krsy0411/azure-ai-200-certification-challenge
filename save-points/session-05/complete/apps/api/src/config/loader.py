@@ -55,7 +55,7 @@ async def load_app_config(settings: Settings) -> AppConfig:
         endpoint=settings.app_config_endpoint,
         credential=credential,
         keyvault_credential=credential,
-        feature_flags_enabled=True,
+        feature_flag_enabled=True,
         feature_flag_refresh_enabled=True,
         refresh_on=[WatchKey(_SENTINEL_KEY)],
         refresh_interval=_REFRESH_INTERVAL_SECONDS,

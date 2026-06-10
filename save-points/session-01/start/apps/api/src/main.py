@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from azure.monitor.opentelemetry import configure_azure_monitor
 from fastapi import FastAPI, HTTPException
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from .clients.aoai import build_aoai_client
 from .models import ChatRequest, ChatResponse
@@ -29,9 +30,8 @@ async def lifespan(app: FastAPI):
     """
     settings = get_settings()
 
-    # Application Insights / OpenTelemetry 자동 계측 활성화하기
-    # 힌트: settings.applicationinsights_connection_string 이 None 이 아닐 때만
-    # configure_azure_monitor(connection_string=...) 호출
+    # (Application Insights / OpenTelemetry 계측은 lifespan 이 아니라 아래 app 생성 직후
+    #  모듈 레벨에서 설정한다 — 그래야 인입 요청 server span 이 잡힌다.)
 
     # Azure OpenAI · Cosmos DB 클라이언트 초기화하기
     # 힌트: build_aoai_client, build_cosmos_client, get_chunks_container 를 차례로 호출
@@ -51,6 +51,12 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Application Insights / OpenTelemetry 계측 — 반드시 여기(app 생성 직후, 모듈 레벨)에서.
+# 힌트: settings 의 applicationinsights_connection_string 이 있으면
+#   configure_azure_monitor(connection_string=...) 호출 후
+#   FastAPIInstrumentor.instrument_app(app) 로 인입 요청(requests 테이블)까지 계측한다.
+#   (lifespan startup 에서 하면 미들웨어 스택이 이미 만들어진 뒤라 requests 가 안 잡힌다.)
 
 
 @app.get("/healthz")

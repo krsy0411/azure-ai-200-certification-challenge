@@ -32,6 +32,7 @@ dependencies = [
 
     # Observability — Azure Monitor + OpenTelemetry 자동 계측 묶음
     "azure-monitor-opentelemetry>=1.6.0",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
 ]
 
 [dependency-groups]
