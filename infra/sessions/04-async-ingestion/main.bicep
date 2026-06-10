@@ -152,6 +152,8 @@ module egSubscription '../../modules/session-04/event-grid-subscription.bicep' =
       serviceBus.outputs.name,
       'ingest-queue'
     )
+    // documents 컨테이너만 인제스션 트리거 (deployments 컨테이너 함수 배포 zip 제외).
+    subjectBeginsWith: '/blobServices/default/containers/documents/'
   }
   dependsOn: [
     ingestQueue
@@ -232,6 +234,21 @@ module statsContainer '../../modules/session-04/cosmos-container.bicep' = {
   }
 }
 
+// -------- 5b) PostgreSQL 방화벽 — Azure 서비스 허용 ------------------------------
+//             Function App(Azure 호스팅) 이 UAMI 로 PG 에 접속하려면 PG 방화벽이 Azure
+//             서비스를 허용해야 한다 (0.0.0.0 특수 규칙). session-02 는 dev IP 만 열므로
+//             여기서 추가. 없으면 함수의 _upsert_pg 가 connection timeout 으로 실패한다.
+
+module pgAllowAzure '../../modules/session-02/postgres-firewall-rule.bicep' = {
+  name: 'pgAllowAzure'
+  params: {
+    serverName: pgName
+    name: 'AllowAllAzureServices'
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
 // -------- 6) Function App (Flex Consumption) ------------------------------------
 
 module plan '../../modules/session-04/function-app-plan-flex.bicep' = {
@@ -268,6 +285,7 @@ module functionApp '../../modules/session-04/function-app-flex.bicep' = {
     blobOwnerUami
     queueContributorUami
     sbReceiverUami
+    pgAllowAzure
   ]
 }
 
