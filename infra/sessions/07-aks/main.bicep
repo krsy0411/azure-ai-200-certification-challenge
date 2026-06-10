@@ -151,6 +151,16 @@ module clusterUser '../../modules/session-07/role-assignment-aks-cluster-user.bi
   }
 }
 
+// Cluster User Role 은 kubeconfig 다운로드만 허용한다. 클러스터가 Azure RBAC for
+// Kubernetes 라 실제 kubectl get/apply 에는 RBAC 데이터플레인 역할이 추가로 필요하다.
+module clusterRbacAdmin '../../modules/session-07/role-assignment-aks-rbac-admin.bicep' = if (!empty(userObjectId)) {
+  name: 'clusterRbacAdmin-user'
+  params: {
+    clusterName: aks.outputs.name
+    principalId: userObjectId
+  }
+}
+
 // -------- 출력 -----------------------------------------------------------------
 
 output aksName string = aks.outputs.name
