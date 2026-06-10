@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from azure.monitor.opentelemetry import configure_azure_monitor
 from fastapi import FastAPI, HTTPException
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from .cache.semantic import SemanticCache, build_semantic_cache
 from .clients.aoai import build_aoai_client
@@ -39,13 +40,6 @@ async def lifespan(app: FastAPI):
     클라이언트는 `app.state` 에 보관해 요청 핸들러가 가져다 쓴다.
     """
     settings = get_settings()
-
-    # Azure Monitor + OpenTelemetry 자동 계측 활성화.
-    # APPLICATIONINSIGHTS_CONNECTION_STRING 환경변수가 설정되어 있을 때만 동작.
-    if settings.applicationinsights_connection_string:
-        configure_azure_monitor(
-            connection_string=settings.applicationinsights_connection_string,
-        )
 
     aoai_client = build_aoai_client(settings)
 
@@ -91,6 +85,17 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# 관측성 — Azure Monitor + OpenTelemetry. app 생성 직후(요청 처리 전, 모듈 로드 시점)에
+# 계측해야 인입 요청 server span(requests 테이블)이 잡힌다. lifespan startup 에서 호출하면
+# 미들웨어 스택이 이미 만들어진 뒤라 server span 이 누락된다 (커스텀 span·metric·log 는
+# 잡히지만 requests 만 빠져, session-06 의 requests 기반 알림·Workbook 에 데이터가 없게 됨).
+_obs_settings = get_settings()
+if _obs_settings.applicationinsights_connection_string:
+    configure_azure_monitor(
+        connection_string=_obs_settings.applicationinsights_connection_string,
+    )
+    FastAPIInstrumentor.instrument_app(app)
 
 
 @app.get("/healthz")

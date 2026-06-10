@@ -14,6 +14,10 @@ dependencies = [
 
     # Azure authentication
     "azure-identity>=1.19.0",
+    # azure-core 의 async HTTP transport. ACA 에서 async DefaultAzureCredential
+    # (AppServiceCredential) 이 필요로 하지만 최신 azure-core 는 자동 설치하지 않으므로
+    # 명시적으로 선언한다. 누락 시 startup 에서 ModuleNotFoundError: aiohttp 로 크래시.
+    "aiohttp>=3.10.0",
 
     # Azure OpenAI
     "openai>=1.54.0",
@@ -36,6 +40,9 @@ dependencies = [
 
     # Observability — Azure Monitor + OpenTelemetry 자동 계측 묶음
     "azure-monitor-opentelemetry>=1.6.0",
+    # FastAPI 인입 요청 계측 — distro 에 포함되나, app 인스턴스를 명시 계측(instrument_app)
+    # 하려면 직접 import 하므로 명시 의존성으로 선언한다.
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
 ]
 
 [dependency-groups]
