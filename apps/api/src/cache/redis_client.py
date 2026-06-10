@@ -34,4 +34,8 @@ def build_redis_client(settings: Settings) -> Redis:
         ssl=True,
         credential_provider=credential_provider,
         decode_responses=False,
+        # RESP2 고정. redis-py 8.x 는 RESP3 를 기본 협상하는데, 그 경우 FT.SEARCH 응답이
+        # map 구조로 와서 .docs 기반 결과 파싱이 빈 결과를 돌려준다 (silent cache miss).
+        # RESP2 배열 응답으로 고정해 시맨틱 캐시 lookup 이 정상 동작하게 한다.
+        protocol=2,
     )
