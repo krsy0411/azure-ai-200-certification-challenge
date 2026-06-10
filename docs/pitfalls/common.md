@@ -89,6 +89,35 @@
 - 원인 — Key Vault / App Configuration 은 soft-delete 후 7일 동안 같은 이름 재생성 불가
 - 회피 — dev 환경도 `purgeProtectionEnabled: true` 설정 + 정리 시 `--purge` 옵션 사용 (Key Vault) 또는 접미사를 한 단계 올림
 
+### Cosmos serverless 는 capability 가 아니라 `capacityMode` 속성 (session-01)
+
+- 증상 — `BadRequest: Capability EnableServerless is not allowed in API version beyond 2024-05-15-preview. Used API Version: 2024-12-01-preview. Use CapacityMode instead to serverless`
+- 원인 — API `2024-12-01-preview` 부터 serverless 를 `capabilities: [{ name: 'EnableServerless' }]` 로 켤 수 없다. `databaseAccount` 의 `capacityMode` 속성으로 지정해야 함
+- 회피 — capabilities 에는 `EnableNoSQLVectorSearch` 만 두고 `properties.capacityMode` 설정
+
+  ```bicep
+  resource cosmos '...@2024-12-01-preview' = {
+    properties: {
+      capacityMode: 'Serverless'
+      capabilities: [ { name: 'EnableNoSQLVectorSearch' } ]
+    }
+  }
+  ```
+
+### App Configuration `disableLocalAuth=true` 는 ARM/Bicep keyValue 시드와 양립 불가 (session-05)
+
+- 증상 — 배포 시 keyValues·featureFlags 가 `Conflict: ... configuration store is using local authentication mode and local authentication is disabled. please use pass-through authentication mode` 로 실패. 배포자가 `App Configuration Data Owner` 를 가져도 실패 (RBAC 전파 문제가 아님)
+- 원인 — Azure 는 local auth 가 비활성화된 App Configuration store 에 ARM/Bicep 으로 key-value 를 생성할 수 없다 (문서화된 제약)
+- 회피 — 둘 중 하나
+  - store 를 `disableLocalAuth: false` 로 두고 ARM 으로 시드 — store 가 시크릿을 안 담으면(endpoint·host·KV 참조 URI·플래그만) 무난. 앱은 여전히 endpoint + UAMI(Entra) 로 읽으므로 접근키 미사용
+  - 또는 `disableLocalAuth: true` 유지 + keyValues 를 ARM 대신 `az appconfig kv set --auth-mode login` / `az appconfig feature set --auth-mode login` (Entra) 으로 시드
+
+### 피처 플래그 contentType 에 `;charset=utf-8` 누락 (session-05)
+
+- 증상 — `az appconfig feature list` 가 비어있고 (`feature disable` 는 "does not exist"), 앱의 `is_enabled()` 도 항상 false. `az appconfig kv list` 에는 `.appconfig.featureflag/<name>` 키가 보임
+- 원인 — Bicep 으로 플래그를 쓸 때 contentType 을 `application/vnd.microsoft.appconfig.ff+json` 으로만 지정. CLI·SDK 는 charset 까지 정확히 일치해야 feature flag 로 인식
+- 회피 — `contentType: 'application/vnd.microsoft.appconfig.ff+json;charset=utf-8'`
+
 ---
 
 ## 컨테이너 · 이미지
@@ -201,6 +230,30 @@
 - 원인 — internal-only ingress 는 외부 트래픽을 TCP 차단하지 않고 라우팅하지 않음. 결과적으로 404 응답
 - 회피 — 외부 접근이 필요하면 `ingress.external = true`. 외부에서 테스트할 때는 ingress 를 일시적으로 토글
 
+### Event Grid Blob 구독에 subject 필터 누락 → 배포 컨테이너까지 트리거 (session-04)
+
+- 증상 — 업로드하지 않은 blob 까지 인제스션 시도. 큐에 `BlobNotFound` 메시지가 누적되고, `func azure functionapp publish` 직후 다발 발생
+- 원인 — system topic 구독이 `subjectBeginsWith` 없이 모든 컨테이너의 `BlobCreated` 를 수신. 함수 배포 zip 이 올라가는 `deployments` 컨테이너 이벤트까지 큐로 전달되는데, 그 blob 은 곧 삭제되어 함수가 다운로드 시 404
+- 회피 — 구독 필터를 documents 컨테이너로 제한
+
+  ```bicep
+  filter: {
+    includedEventTypes: [ 'Microsoft.Storage.BlobCreated' ]
+    subjectBeginsWith: '/blobServices/default/containers/documents/'
+  }
+  ```
+
+### PostgreSQL 방화벽이 Azure Function 을 차단 → ConnectionTimeout (session-04)
+
+- 증상 — 함수의 `_upsert_pg` 가 `psycopg.ConnectionTimeout` (연결 거부가 아니라 ~132초 timeout). Cosmos 적재는 되는데 PG 만 빔. 메시지가 max delivery 5회 재시도 후 DLQ
+- 원인 — session-02 PG 방화벽이 dev IP 만 허용. Azure 호스팅 함수의 outbound 가 차단됨 (drop 은 거부가 아닌 timeout 으로 나타남)
+- 회피 — PG 에 "Allow Azure services" 규칙 추가 (시작·끝 IP 모두 `0.0.0.0`). dev 워크샵 수준의 단순 해법이며 운영에선 VNet 통합 권장
+
+  ```bash
+  az postgres flexible-server firewall-rule create -g <rg> -n <pg> \
+    --rule-name AllowAllAzureServices --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0
+  ```
+
 ---
 
 ## Azure Kubernetes Service
@@ -216,6 +269,13 @@
 - 증상 — Azure Kubernetes Service → Insights 가 `no data`. 디버깅에 가장 오래 걸린 함정 (실제 측정 34시간)
 - 원인 — 최신 Container Insights 는 DCR (Data Collection Rule) + DCRA (Data Collection Rule Association) 명시 선언이 필요
 - 회피 — Bicep 에 `Microsoft.Insights/dataCollectionRules` + `Microsoft.Insights/dataCollectionRuleAssociations` 모두 선언
+
+### Azure RBAC 클러스터는 Cluster User Role 만으론 kubectl 불가 (session-07)
+
+- 증상 — `az aks get-credentials` 는 되는데 `kubectl get/apply` 가 전부 `Error from server (Forbidden): ... User does not have access to the resource in Azure. Update role assignment to allow access`. 구독 Owner 여도 동일
+- 원인 — `enableAzureRBAC=true` 클러스터는 Kubernetes 데이터플레인 접근을 Azure 역할로 통제. `Azure Kubernetes Service Cluster User Role` 은 kubeconfig 다운로드(`listClusterUserCredential`)만 허용하고, 실제 리소스 조작 권한이 아니다 (Owner 도 K8s 데이터플레인은 미포함 — Cosmos/Storage 데이터플레인과 같은 구조)
+- 회피 — 본인에게 `Azure Kubernetes Service RBAC Cluster Admin`(또는 Writer/Admin) 을 클러스터 scope 로 추가 부여. Bicep 으로 선언하면 깔끔
+- 참고 — `az aks command invoke` 로 클러스터 내부에서 kubectl 실행 시 로컬 `kubelogin` 불필요 (CI/자동화에 유용)
 
 ### `koreacentral` DSv5 vCPU 할당량 = 0 (session-07)
 
@@ -254,3 +314,7 @@
 - **Cosmos `quantizedFlat` 인덱스 비동기 빌드** — 빌드 중 쿼리는 0개 결과 반환 (에러 아님). "데이터가 안 들어갔나" 로 오진하기 쉬움 (session-01)
 - **PostgreSQL 파라미터 set 순서** 는 알파벳 정렬에 의존. `pgbouncer.enabled` 가 sub-param 들보다 먼저 와야 함 (session-02)
 - **App Configuration Sentinel refresh** 는 30~60초 폴링 방식. 즉시 반영되지 않으므로, 실시간 반영이 필요하면 push 모델을 별도 구성 (session-05)
+- **Windows + psycopg async** — Windows 기본 ProactorEventLoop 에서 `asyncio.run()` 으로 psycopg async 를 돌리면 `Psycopg cannot use the 'ProactorEventLoop'` 로 죽는다. `asyncio.run(main(), loop_factory=asyncio.SelectorEventLoop)` (Python 3.12+) 로 SelectorEventLoop 강제. `seed_both.py` 같은 로컬 스크립트에서 발생 (session-02)
+- **PostgreSQL `SET LOCAL x = %s`** 는 bind 파라미터를 받지 않아 `syntax error at or near "$1"`. 신뢰된 정수는 직접 보간(`f"SET LOCAL hnsw.ef_search = {int(v)}"`)하거나 `SELECT set_config('x', %s, true)` 사용 (session-02)
+- **FastAPI OpenTelemetry 계측은 app 생성 직후(모듈 레벨)에 해야 한다** — `configure_azure_monitor()` 를 lifespan startup 에서 호출하면 `FastAPI.__init__` 패치가 *이미 생성된* app 에 적용 안 돼 **인입 요청 server span(`requests` 테이블)이 통째로 누락**된다. 커스텀 span(`dependencies`)·metric·log 는 잡히는데 `requests` 만 빠져 증상이 헷갈림. 영향: session-06 의 `requests` 기반 알림(오류율·p95)·Workbook P95 에 데이터가 안 들어옴. 해결: `app = FastAPI(...)` **직후 모듈 레벨**에서 `configure_azure_monitor(...)` + `FastAPIInstrumentor.instrument_app(app)` 호출 (session-06)
+- **`azure-appconfiguration-provider` 의 `load()` kwarg 는 `feature_flag_enabled`(단수)** — `feature_flags_enabled`(복수) 오타를 넘기면 `load()` 가 `**kwargs` 라 에러 없이 무시하고 **피처 플래그를 아예 로드하지 않는다**. 결과적으로 `is_enabled()` 가 항상 false (플래그·캐시 토글이 통째로 죽음). 증상이 조용해서 진단이 어려움 (session-05)

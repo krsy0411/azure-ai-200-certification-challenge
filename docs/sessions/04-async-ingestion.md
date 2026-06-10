@@ -146,6 +146,9 @@ module egSubscription '../../modules/session-04/event-grid-subscription.bicep' =
       serviceBus.outputs.name,
       'ingest-queue'
     )
+    // documents 컨테이너만 인제스션 트리거 — 함수 배포 zip 이 올라가는 deployments
+    // 컨테이너의 BlobCreated 까지 받으면 BlobNotFound 로 큐가 오염된다.
+    subjectBeginsWith: '/blobServices/default/containers/documents/'
   }
   dependsOn: [
     ingestQueue
@@ -230,6 +233,18 @@ module statsContainer '../../modules/session-04/cosmos-container.bicep' = {
   }
 }
 
+// Function(Azure 호스팅) 이 UAMI 로 PG 에 접속하려면 PG 방화벽이 Azure 서비스를 허용해야
+// 한다. session-02 는 dev IP 만 열므로 여기서 추가 (없으면 함수 _upsert_pg 가 ConnectionTimeout).
+module pgAllowAzure '../../modules/session-02/postgres-firewall-rule.bicep' = {
+  name: 'pgAllowAzure'
+  params: {
+    serverName: pgName
+    name: 'AllowAllAzureServices'
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
 module plan '../../modules/session-04/function-app-plan-flex.bicep' = {
   name: 'plan'
   params: {
@@ -263,6 +278,7 @@ module functionApp '../../modules/session-04/function-app-flex.bicep' = {
     blobOwnerUami
     queueContributorUami
     sbReceiverUami
+    pgAllowAzure
   ]
 }
 ```
@@ -562,6 +578,12 @@ az servicebus message send -g rg-ai200ws-dev --namespace-name $SB \
 
 > [!NOTE]
 > **`identity.type='UserAssigned'` 자원은 `identity.principalId` 미노출** — `userAssignedIdentities[id].principalId` 로 접근합니다.
+
+> [!CAUTION]
+> **Event Grid Blob 구독에 subject 필터 필수** — `subjectBeginsWith` 없이 두면 `documents` 뿐 아니라 함수 배포 zip 이 올라가는 `deployments` 컨테이너의 `BlobCreated` 까지 큐로 전달됩니다. 그 blob 은 곧 삭제되어 함수가 `BlobNotFound` 로 실패하고 큐가 오염됩니다 (`func publish` 직후 다발). 구독 필터를 `/blobServices/default/containers/documents/` 로 제한하세요 (본 워크샵 Bicep 반영됨).
+
+> [!CAUTION]
+> **PostgreSQL 방화벽에 "Allow Azure services" 필요** — Azure 호스팅 함수가 UAMI 로 PG 에 접속하는데, session-02 PG 방화벽이 dev IP 만 열어두면 함수의 `_upsert_pg` 가 `ConnectionTimeout` (~132초) 으로 실패합니다 (Cosmos 는 적재되는데 PG 만 빔). PG 에 `0.0.0.0` (Allow Azure services) 규칙을 추가하세요 (본 워크샵 session-04 Bicep 에 반영됨). 운영에선 VNet 통합을 권장합니다.
 
 ---
 

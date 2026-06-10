@@ -307,6 +307,9 @@ done
 > **커스텀 루트 span 을 만들지 않습니다** — FastAPI 자동 계측이 이미 SERVER(requests) span 을 만들므로, 또 다른 루트를 만들면 중복됩니다. RAG span 들은 `start_as_current_span` 으로 열어 자동 request span 의 자식으로 중첩합니다.
 
 > [!CAUTION]
+> **FastAPI 계측은 `app = FastAPI(...)` 직후 모듈 레벨에서** — `configure_azure_monitor()` + `FastAPIInstrumentor.instrument_app(app)` 를 lifespan startup 에서 호출하면 미들웨어 스택이 이미 만들어진 뒤라 **인입 요청(requests) span 이 통째로 누락**됩니다(커스텀 span·metric 은 잡히는데 requests 만 빠짐). 그러면 위의 "자동 request span" 전제가 깨지고, 본 세션의 requests 기반 알림·Workbook P95 에 데이터가 안 들어옵니다. 반드시 app 생성 직후(요청 처리 전)에 계측하세요.
+
+> [!CAUTION]
 > **민감 정보 attribute 금지** — 질문 본문·답변을 attribute 에 넣으면 Application Insights 에 영구 기록됩니다. `user.session_id` 까지만 기록하고 본문은 넣지 않습니다.
 
 > [!WARNING]

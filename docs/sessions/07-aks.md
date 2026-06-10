@@ -128,9 +128,9 @@ module dcra '../../modules/session-07/aks-container-insights-dcra.bicep' = {
 }
 ```
 
-### 1.4 Workload Identity + Cluster User Role + 출력
+### 1.4 Workload Identity + Cluster User Role + RBAC Cluster Admin + 출력
 
-`// -------- 4) ...` · `// -------- 5) ...` · `// -------- 출력` 주석 아래에 채웁니다.
+`// -------- 4) ...` · `// -------- 5) ...` · `// -------- 출력` 주석 아래에 채웁니다. 클러스터가 `enableAzureRBAC=true` 라 Cluster User Role(kubeconfig 다운로드)만으론 `kubectl get/apply` 가 `Forbidden` 이므로 **RBAC Cluster Admin** 도 함께 부여합니다.
 
 ```bicep
 module fic '../../modules/session-07/federated-identity-credential.bicep' = {
@@ -145,6 +145,16 @@ module fic '../../modules/session-07/federated-identity-credential.bicep' = {
 
 module clusterUser '../../modules/session-07/role-assignment-aks-cluster-user.bicep' = if (!empty(userObjectId)) {
   name: 'clusterUser-user'
+  params: {
+    clusterName: aks.outputs.name
+    principalId: userObjectId
+  }
+}
+
+// Cluster User Role 은 kubeconfig 다운로드만 허용. enableAzureRBAC=true 클러스터의 실제
+// kubectl get/apply 에는 RBAC 데이터플레인 역할(RBAC Cluster Admin)이 추가로 필요하다.
+module clusterRbacAdmin '../../modules/session-07/role-assignment-aks-rbac-admin.bicep' = if (!empty(userObjectId)) {
+  name: 'clusterRbacAdmin-user'
   params: {
     clusterName: aks.outputs.name
     principalId: userObjectId
@@ -248,7 +258,7 @@ spec:
                 name: apps-api-config
           env:
             - name: AZURE_CLIENT_ID
-              value: "__User Assigned Managed Identity_CLIENT_ID__"
+              value: "__UAMI_CLIENT_ID__"
           readinessProbe:
             httpGet:
               path: /healthz
@@ -289,11 +299,11 @@ spec:
 
 ### 2.3 placeholder 치환 + 배포
 
-매니페스트의 `__ACR_LOGIN_SERVER__` · `__User Assigned Managed Identity_CLIENT_ID__` · `__AOAI_ENDPOINT__` · `__COSMOS_ENDPOINT__` 를 실제 값으로 치환합니다.
+매니페스트의 `__ACR_LOGIN_SERVER__` · `__UAMI_CLIENT_ID__` · `__AOAI_ENDPOINT__` · `__COSMOS_ENDPOINT__` 를 실제 값으로 치환합니다.
 
 ```bash
 ACR_LOGIN_SERVER=$(az acr list -g rg-ai200ws-dev --query "[0].loginServer" -o tsv)
-User Assigned Managed Identity_CLIENT_ID=$(az identity show -n id-ai200ws-dev -g rg-ai200ws-dev --query clientId -o tsv)
+UAMI_CLIENT_ID=$(az identity show -n id-ai200ws-dev -g rg-ai200ws-dev --query clientId -o tsv)
 ACCT=$(az cognitiveservices account list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 AOAI_ENDPOINT=$(az cognitiveservices account show -n $ACCT -g rg-ai200ws-dev --query "properties.endpoint" -o tsv)
 COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
@@ -302,7 +312,7 @@ COSMOS_ENDPOINT=$(az cosmosdb show -n $COSMOS -g rg-ai200ws-dev --query "documen
 # 매니페스트 4개의 placeholder 일괄 치환 (Linux · macOS · WSL)
 sed -i \
   -e "s|__ACR_LOGIN_SERVER__|$ACR_LOGIN_SERVER|g" \
-  -e "s|__User Assigned Managed Identity_CLIENT_ID__|$User Assigned Managed Identity_CLIENT_ID|g" \
+  -e "s|__UAMI_CLIENT_ID__|$UAMI_CLIENT_ID|g" \
   -e "s|__AOAI_ENDPOINT__|$AOAI_ENDPOINT|g" \
   -e "s|__COSMOS_ENDPOINT__|$COSMOS_ENDPOINT|g" \
   infra/sessions/07-aks/manifests/*.yaml
@@ -382,7 +392,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
 > **`koreacentral` DSv5 vCPU 할당량 = 0** — DSv5 기본 할당량이 0 이라 quota exceeded 가 납니다. 본 워크샵은 DSv3(기본 10 vCPU) 를 사용합니다.
 
 > [!WARNING]
-> **Entra ID + Azure RBAC + `disableLocalAccounts=true`** — `az aks get-credentials --admin` 은 사용 불가(정상). 본인 Entra 사용자에 `Azure Kubernetes Service Cluster User Role` 이 있어야 `kubectl` 이 동작합니다 (본 세션 Bicep 이 자동 부여).
+> **Entra ID + Azure RBAC + `disableLocalAccounts=true`** — `az aks get-credentials --admin` 은 사용 불가(정상). **두 역할이 모두 필요**합니다: ① `Azure Kubernetes Service Cluster User Role`(kubeconfig 다운로드용) ② `Azure Kubernetes Service RBAC Cluster Admin`(실제 `kubectl get/apply` — 클러스터가 `enableAzureRBAC=true` 라 Cluster User Role 만으론 모든 리소스가 `Forbidden: ... Update role assignment to allow access`). 본 세션 Bicep 이 둘 다 자동 부여합니다. (`az aks command invoke` 로 클러스터에서 kubectl 을 실행하면 로컬 kubelogin 불필요.)
 
 > [!CAUTION]
 > **Workload Identity subject 일치** — federatedIdentityCredential 의 subject(`system:serviceaccount:default:apps-api-sa`)와 매니페스트의 namespace·ServiceAccount 이름이 정확히 일치해야 합니다. 불일치 시 토큰 교환이 실패해 파드가 Azure 자원 접근에서 인증 오류를 냅니다.

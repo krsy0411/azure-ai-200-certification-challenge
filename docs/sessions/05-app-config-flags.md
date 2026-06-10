@@ -66,7 +66,7 @@ Copy-Item -Path save-points/session-05/start/* -Destination workshop -Recurse -F
 
 `infra/modules/session-05/` 에 완성되어 있는 모듈입니다.
 
-- `app-configuration.bicep` — Free 등급 store (Entra 전용 인증)
+- `app-configuration.bicep` — Free 등급 store. 앱은 endpoint + Entra(UAMI)로 읽지만, ARM 으로 keyValues·플래그를 시드하려면 store 의 local auth 를 켜둔다 (`disableLocalAuth: false`) — local auth 가 꺼져 있으면 ARM 시드가 Conflict 로 실패
 - `app-configuration-keyvalue.bicep` — 일반 키/값 (재사용)
 - `app-configuration-keyvault-ref.bicep` — Key Vault reference
 - `app-configuration-feature-flag.bicep` — 피처 플래그
@@ -253,7 +253,7 @@ az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
         endpoint=settings.app_config_endpoint,
         credential=credential,
         keyvault_credential=credential,
-        feature_flags_enabled=True,
+        feature_flag_enabled=True,
         feature_flag_refresh_enabled=True,
         refresh_on=[WatchKey(_SENTINEL_KEY)],
         refresh_interval=_REFRESH_INTERVAL_SECONDS,
@@ -262,7 +262,7 @@ az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
 ```
 
 > [!WARNING]
-> **피처 플래그 refresh 는 4박자가 모두 필요** — `feature_flags_enabled=True` (플래그 로드) + `feature_flag_refresh_enabled=True` (플래그 새로 고침 활성) + `refresh_on=[WatchKey(...)]` (감시 키) + 요청 핸들러의 `config.refresh()` 호출. 하나라도 빠지면 토글이 반영되지 않습니다. 특히 `feature_flag_refresh_enabled` 는 일반 설정 refresh 와 별개라 자주 누락됩니다.
+> **피처 플래그 refresh 는 4박자가 모두 필요** — `feature_flag_enabled=True` (플래그 로드, 단수 주의 — `feature_flags_enabled` 복수는 무시됨) + `feature_flag_refresh_enabled=True` (플래그 새로 고침 활성) + `refresh_on=[WatchKey(...)]` (감시 키) + 요청 핸들러의 `config.refresh()` 호출. 하나라도 빠지면 토글이 반영되지 않습니다. 특히 `feature_flag_refresh_enabled` 는 일반 설정 refresh 와 별개라 자주 누락됩니다.
 
 > [!NOTE]
 > 패키지는 `azure-appconfiguration-provider` (provider 의 `load`) 와 `featuremanagement` (`FeatureManager`) 두 개입니다. 저수준 `azure-appconfiguration` 이나 `azure.appconfiguration.feature_management` 가 아닙니다.

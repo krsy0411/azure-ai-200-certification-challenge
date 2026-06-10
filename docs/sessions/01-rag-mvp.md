@@ -86,9 +86,9 @@ az deployment group create \
 ### 1.4 배포 완료 확인
 
 ```bash
-# Cosmos DB 가 준비되었는지
+# Cosmos DB 가 준비되었는지 (이름에 uniqueString 접미사가 붙으므로 동적 조회)
 az cosmosdb show \
-  --name cosmos-ai200ws-dev \
+  --name "$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)" \
   --resource-group rg-ai200ws-dev \
   --query "{state:provisioningState, kind:kind}" -o jsonc
 
@@ -251,7 +251,7 @@ curl -X POST "https://$API_FQDN/api/chat" \
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
-1. **Cosmos DB account `cosmos-ai200ws-dev`** → **Data Explorer** → `chunks` 컨테이너 → **Items** 에 시드된 chunk (id · content · embedding 필드) 노출
+1. **Cosmos DB account `cosmos-ai200ws-dev-*`** (이름에 uniqueString 접미사) → **Data Explorer** → `chunks` 컨테이너 → **Items** 에 시드된 chunk (id · doc_id · content · embedding 필드) 노출
 2. **Azure Container Apps `ca-api-ai200ws-dev`** → **Log stream** → 방금 `curl` 한 요청이 FastAPI 로그에 실시간으로 노출
 3. **Application Insights** → **Live Metrics** → 요청 그래프에 `/api/chat` 호출이 즉시 반영. Server response time 도 측정됨
 4. **Application Insights** → **Transaction search** → 한 요청 안에 (HTTP 인입 → Cosmos query → Azure OpenAI 호출) span 트리 노출

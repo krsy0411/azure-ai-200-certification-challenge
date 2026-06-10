@@ -340,7 +340,8 @@ CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks (doc_id);
         async with self._pool.connection() as conn:
             async with conn.transaction():
                 if ef_search is not None:
-                    await conn.execute("SET LOCAL hnsw.ef_search = %s", (ef_search,))
+                    # SET 은 bind 파라미터($1)를 받지 않는다. ef_search 는 신뢰된 정수라 직접 보간.
+                    await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")
                 cur = await conn.execute(_SEARCH_SQL, (HalfVector(query_embedding), top_k))
                 rows = await cur.fetchall()
 

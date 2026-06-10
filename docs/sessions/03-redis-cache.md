@@ -29,7 +29,7 @@
   - RediSearch `FT.CREATE` (FLAT 벡터 인덱스) + `FT.SEARCH` KNN
   - OpenTelemetry 커스텀 span `cache.lookup` 에 `cache_hit` 속성 부여
 - **Portal 에서 확인할 지표 / 데이터**
-  - Managed Redis → Console — `FT.INFO`, `KEYS rag:*` 로 캐시 키 직접 조회
+  - Managed Redis 데이터 — 시작본의 `scripts/check_redis.py` 로 `FT.INFO`·`KEYS rag:*` 등 캐시 인덱스·키 직접 조회 (redis-cli 설치 불필요)
   - Managed Redis → Metrics — Ops/sec · Cache hits
   - Application Insights → Logs (KQL) — `cache_hit` 분포
 
@@ -54,7 +54,7 @@ Copy-Item -Path save-points/session-03/start/* -Destination workshop -Recurse -F
 
 이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
 
-학습자가 채우는 파일은 세 개입니다 — `infra/sessions/03-redis-cache/main.bicep` (모듈 조립), `apps/api/src/cache/redis_client.py` (Redis 클라이언트), `apps/api/src/cache/semantic.py` (시맨틱 캐시). 나머지 (모듈 3개 · 캐시 배선) 는 완성되어 제공됩니다.
+학습자가 채우는 파일은 세 개입니다 — `infra/sessions/03-redis-cache/main.bicep` (모듈 조립), `apps/api/src/cache/redis_client.py` (Redis 클라이언트), `apps/api/src/cache/semantic.py` (시맨틱 캐시). 나머지 (모듈 3개 · 캐시 배선) 는 완성되어 제공됩니다. 검증용 `scripts/check_redis.py` 도 함께 제공됩니다 — 3단계에서 캐시 인덱스·키를 확인할 때 사용합니다.
 
 ---
 
@@ -318,21 +318,63 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 ---
 
-## 3단계 · Azure Portal UI 에서 확인
+## 3단계 · 배포 검증 — 캐시 내용 확인
 
-[Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
+캐시가 실제로 인덱싱·저장되는지 데이터를 직접 들여다보고, 포털 지표로 보조 확인합니다.
 
-1. **Managed Redis** → **Console** (브라우저 안의 redis-cli) — 다음을 한 줄씩 실행
+> [!IMPORTANT]
+> **Azure Managed Redis 에는 포털 내장 Console 이 없습니다.** 브라우저 안 redis-cli "Console" 은 구형 *Azure Cache for Redis* (`Microsoft.Cache/Redis`) 전용이고, 본 워크샵의 *Azure Managed Redis* (`Microsoft.Cache/redisEnterprise`) 는 [공식 문서](https://learn.microsoft.com/ko-kr/azure/redis/how-to-redis-access-data) 기준 **redis-cli 또는 Redis Insight** 로 접근합니다. 게다가 본 클러스터는 access key 인증을 꺼 둔 상태(`accessKeysAuthentication=Disabled`)라, 키 기반 도구 대신 **Entra ID 토큰**으로 접속해야 합니다. 본 워크샵은 redis-cli 설치 없이 어디서나 도는 **`scripts/check_redis.py`** 를 기본 검증 도구로 씁니다.
 
+1. **데이터 직접 확인 — `scripts/check_redis.py`** (시작본에 포함, `scripts/` 아래)
+
+   표준 라이브러리만으로 Entra 토큰을 받아 Redis 에 접속해 `FT._LIST` · `FT.INFO` · `KEYS` · `TTL` 을 출력합니다. redis-cli 설치가 필요 없어 **PowerShell · Git Bash 등 어느 셸에서도** 동작합니다 (Azure CLI 로그인만 되어 있으면 됨).
+
+   ```bash
+   python scripts/check_redis.py
    ```
-   FT._LIST
-   FT.INFO rag_cache_idx
-   KEYS rag:*
+
+   기대 출력:
+
+   ```text
+   host = redis-ai200ws-dev-....redis.azure.net
+   AUTH      : OK
+   PING      : PONG
+   DBSIZE    : 1
+   FT._LIST  : ['rag_cache_idx']
+   FT.INFO   : num_docs = 1 | hash_indexing_failures = 0
+   KEYS rag:*: 1 keys
+      - rag:....  (TTL=8xxxxs)  question='회사 휴가 정책 알려줘'
    ```
 
-   기대 — `FT._LIST` 에 `rag_cache_idx` 노출, `FT.INFO` 의 `num_docs` 가 호출 횟수만큼 증가, `KEYS rag:*` 에 캐시 키들이 노출됩니다.
+   - `FT._LIST` 에 `rag_cache_idx` → RediSearch 벡터 인덱스가 생성됨
+   - `FT.INFO` 의 `num_docs` 는 **miss 호출 수만큼** 증가, `hash_indexing_failures=0` 이면 인덱싱 정상
+   - `KEYS rag:*` 에 캐시 키, `TTL` 로 24h 만료 적용 확인
 
-2. **Managed Redis** → **Metrics** → `Operations Per Second` · `Cache Hits` 추가
+   > [!TIP]
+   > **시맨틱 hit 를 눈으로 확인** — 2.4 처럼 새 질문(miss) 을 보내면 `num_docs` 가 +1, 의미가 같은 paraphrase(hit) 를 보내면 `num_docs` 가 **그대로** 입니다 (hit 는 저장하지 않으므로). App Insights 텔레메트리가 아직 배선되지 않은 session-03 에선 이 **`num_docs` 변화가 가장 확실한 hit 신호**입니다. (App Insights `cache.lookup` span 은 session-06 이후에 확인)
+
+   <details>
+   <summary>원본 도구로 직접 보고 싶다면 — redis-cli / Redis Insight (선택)</summary>
+
+   **redis-cli + Entra 토큰** — Windows 는 WSL 에 `sudo apt-get install -y redis` 설치 후:
+
+   ```bash
+   OID=$(az ad signed-in-user show --query id -o tsv)
+   TOKEN=$(az account get-access-token --resource https://redis.azure.com --query accessToken -o tsv)
+   REDIS_HOST=$(az redisenterprise list -g rg-ai200ws-dev --query "[0].hostName" -o tsv)
+   # access key 가 꺼져 있으므로 --user=본인 objectId, --pass=Entra 토큰 (토큰 ~1h 만료)
+   redis-cli -h "$REDIS_HOST" -p 10000 --tls --user "$OID" --pass "$TOKEN"
+   ```
+
+   접속 후 `FT._LIST` / `FT.INFO rag_cache_idx` / `KEYS rag:*` / `HGETALL <키>` / `DBSIZE`.
+
+   **Redis Insight (GUI — 인덱스·벡터 시각화, 포트폴리오 스크린샷용)** — 3.2.0+ 는 PKCE OAuth 로 Entra 인증 ([테넌트당 일회성 설정](https://github.com/redis/RedisInsight/blob/main/docs/azure-setup.md)). **+ 기존 데이터베이스 연결 → Azure Managed Redis → Entra 인증 → 구독·DB 선택**, 접속 후 하단 `>_ CLI` 에서 동일 명령 실행.
+   </details>
+
+2. **Managed Redis** → **Metrics** → `Operations Per Second` · `Cache Hits` 추가 (Metrics 는 access key 와 무관하게 포털에서 바로 보입니다)
+
+   > [!NOTE]
+   > 포털 Metrics 의 `Cache Hits`/`Cache Misses` 는 **Redis 키 수준** (존재하는 키 GET 여부) 이지, 본 세션의 **시맨틱 캐시(cosine 임계값) hit/miss 가 아닙니다.** 시맨틱 hit/miss 는 애플리케이션 레벨이라 아래 3·4 의 App Insights `cache.lookup` span 으로 확인합니다.
 
 3. **Application Insights** → **Logs** 에서 다음 KQL 실행
 
@@ -383,6 +425,20 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 > [!NOTE]
 > **`az redisenterprise show` 응답 구조** — 일반 ARM 자원의 `properties.xxx` 가 아니라 평탄화된 구조 (`resourceState`, `hostName` 등이 최상위) 입니다.
+
+### 실배포에서 만난 함정 (2026-06-09 실측)
+
+이 세션을 실제로 ACA 에 배포해보니, Bicep·캐시 로직이 아니라 **Python 의존성 해석 drift** 때문에 캐시가 *조용히* 작동하지 않는 함정 두 개를 만났습니다. 둘 다 에러 메시지가 캐시와 무관해 추적이 까다로웠습니다.
+
+> [!CAUTION]
+> **`aiohttp` 누락으로 컨테이너 startup 크래시 → 옛 리비전으로 폴백** — 최신 `azure-core` 는 async HTTP transport (`aiohttp`) 를 자동 설치하지 않습니다. ACA 안에서 async `DefaultAzureCredential` (AppServiceCredential) 이 이를 필요로 하므로, 누락 시 앱이 startup 에서 `ModuleNotFoundError: No module named 'aiohttp'` 로 죽습니다. 그러면 새 리비전이 **`ActivationFailed`** 가 되고 ACA 는 직전 healthy 리비전으로 트래픽을 유지합니다 — 즉 **이전 세션 이미지가 계속 서빙**되어, 새로 넣은 캐시 코드가 한 줄도 실행되지 않습니다 (Redis `DBSIZE 0`, 인덱스 없음). 증상이 "캐시 miss" 로만 보여 원인이 캐시 밖에 있음을 알기 어렵습니다.
+> - **확인**: `az containerapp revision list ... --query "[].{health:properties.healthState, running:properties.runningState, image:...}"` 로 새 리비전이 `ActivationFailed` 인지, 트래픽이 옛 이미지로 가는지 본다. startup 로그는 `ContainerAppConsoleLogs_CL` (Log Analytics) 에서 확인.
+> - **해결**: `pyproject.toml` 에 `aiohttp>=3.10.0` 명시. (session-01·02 이미지가 살아있던 건 과거 빌드 때 aiohttp 가 transitive 로 딸려왔기 때문 — 의존성 재해석으로 빠진 것.)
+
+> [!CAUTION]
+> **redis-py 8.x 의 RESP3 → `FT.SEARCH` 결과가 빈 채로 파싱됨 (silent cache miss)** — `redis-entraid` 가 `redis` 를 버전 무제한으로 끌어와 redis-py **8.0.0** (RESP3 기본 협상) 이 설치될 수 있습니다. RESP3 에서 `FT.SEARCH` 응답은 배열이 아니라 **map** (`attributes`/`total_results`/`results` …) 으로 오는데, 본 세션 lookup 코드의 `result.docs` 파싱 경로가 이를 빈 결과로 돌려줍니다 — 예외도 안 나고 항상 캐시 miss 가 됩니다. store·인덱스 (`hset`·`FT.CREATE`) 는 RESP3 와 무관하게 정상이라, "키는 저장되는데 hit 만 안 되는" 혼란스러운 상태가 됩니다.
+> - **확인**: redis-cli (Entra 토큰) 로 `FT.SEARCH rag_cache_idx "*=>[KNN 1 @embedding $v AS dist]" ...` 를 직접 쳐 보면 결과가 나오는데 (또는 `scripts/check_redis.py` 로 `num_docs>0` 인데도), 앱만 miss 라면 클라이언트 프로토콜 문제다.
+> - **해결**: Redis 클라이언트에 `protocol=2` 를 지정해 RESP2 로 고정 (`apps/api/src/cache/redis_client.py`). 또는 `redis` 를 5.x 로 핀.
 
 > [!TIP]
 > 진행 중 막혔다면 완성본 코드를 그대로 덮어쓰고 비교할 수 있습니다.

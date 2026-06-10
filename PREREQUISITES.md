@@ -87,6 +87,23 @@ az vm list-usage --location koreacentral -o table | grep -E "DSv3|Standard_D"
 | kubectl (session-07 진행 시) | 1.30+ | `kubectl version --client` |
 | git | 2.40+ | `git --version` |
 
+> [!TIP]
+> **설치 명령 예시 (Windows `winget`)** — macOS 는 `brew install`, Linux 는 배포판 패키지 매니저 사용. 설치 후 PATH 갱신을 위해 **새 터미널**을 엽니다.
+>
+> ```powershell
+> winget install Python.Python.3.12
+> winget install OpenJS.NodeJS.LTS
+> winget install Microsoft.AzureCLI
+> winget install Docker.DockerDesktop                  # 선택 (아래 참고)
+> winget install Microsoft.Azure.FunctionsCoreTools    # session-04 함수 배포에 필요
+> winget install Kubernetes.kubectl                    # session-07 진행 시
+> winget install Git.Git
+> az bicep install
+> ```
+>
+> - **`func` (Functions Core Tools)** — `winget` 이 막히면 `npm i -g azure-functions-core-tools@4 --unsafe-perm true`. 정 안 되면 `az functionapp deployment source config-zip` 으로 우회 가능(문서 표준은 `func`).
+> - **Docker Desktop 은 선택** — 이미지 빌드를 `az acr build` 로 클라우드에서 수행하면 로컬 Docker 없이도 가능합니다 (`az acr build --registry <acr> --image api:tag apps/api`). ARM Mac 빌드 느림·`exec format error` 도 함께 회피됩니다. ([막혔을 때](#막혔을-때) 참고)
+
 ### 4.2 Azure CLI 확장 설치
 
 본 워크샵 진행에 다음 확장이 필요합니다.
