@@ -19,14 +19,9 @@ param disableLocalAuth bool = true
 @description('Tags')
 param tags object = {}
 
-var capabilities = capacityMode == 'Serverless' ? [
-  {
-    name: 'EnableServerless'
-  }
-  {
-    name: 'EnableNoSQLVectorSearch'
-  }
-] : [
+// 2024-12-01-preview 부터 serverless 는 capability(EnableServerless) 가 아니라
+// databaseAccount 의 capacityMode 속성으로 지정한다. 벡터 검색만 capability 로 유지.
+var capabilities = [
   {
     name: 'EnableNoSQLVectorSearch'
   }
@@ -39,6 +34,7 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-12-01-preview' = {
   kind: 'GlobalDocumentDB'
   properties: {
     databaseAccountOfferType: 'Standard'
+    capacityMode: capacityMode
     locations: [
       {
         locationName: location
