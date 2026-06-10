@@ -25,7 +25,9 @@ resource featureFlag 'Microsoft.AppConfiguration/configurationStores/keyValues@2
         client_filters: []
       }
     })
-    contentType: 'application/vnd.microsoft.appconfig.ff+json'
+    // charset 까지 정확히 일치해야 az appconfig feature CLI · App Config provider SDK 가
+    // feature flag 로 인식한다. 누락 시 일반 key-value 로만 취급돼 is_enabled 가 false.
+    contentType: 'application/vnd.microsoft.appconfig.ff+json;charset=utf-8'
   }
 }
 
