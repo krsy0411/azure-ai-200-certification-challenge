@@ -511,10 +511,49 @@ psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
 1. **Service Bus** → 큐 `ingest-queue` → **Metrics** → `Active Messages` (업로드 직후 1 → 0), `Dead-lettered Messages` (0 유지)
+
+   <!-- 📸 capture: images/session-04/3a-service-bus-queue-metrics.png -->
+   <!--
+   ![ingest-queue 의 Active Messages 와 Dead-lettered Messages 메트릭 차트를 보여 주는 Azure Portal 스크린샷](../../images/session-04/3a-service-bus-queue-metrics.png)
+
+   업로드 직후 **Active Messages** 가 1 로 튀었다가 함수가 소비한 뒤 0 으로 복귀하고, **Dead-lettered Messages** 는 0 을 유지하는지 확인합니다.
+   -->
+
 2. **Function App** → **Functions** → `on_ingest_message` → **Invocations** — 실행 1건 `Success`, duration 약 2~5초
+
+   <!-- 📸 capture: images/session-04/3b-function-invocations-success.png -->
+   <!--
+   ![on_ingest_message 함수의 Invocations 목록에서 Success 실행 1건을 보여 주는 Azure Portal 스크린샷](../../images/session-04/3b-function-invocations-success.png)
+
+   실행 1건의 상태가 **Success** 이고 duration 이 약 2~5초인지 확인합니다.
+   -->
+
 3. **Function App** → **Log stream** — `[on_ingest_message] processed sample-policy.md → N chunks`
+
+   <!-- 📸 capture: images/session-04/3c-function-log-stream.png -->
+   <!--
+   ![Function App 의 Log stream 에 청크 처리 완료 로그가 출력된 모습을 보여 주는 Azure Portal 스크린샷](../../images/session-04/3c-function-log-stream.png)
+
+   `[on_ingest_message] processed sample-policy.md → N chunks` 로그 줄이 출력되는지 확인합니다. N 은 분할된 청크 개수입니다.
+   -->
+
 4. **Event Grid System Topic** → **Metrics** — `Publish Events` · `Delivery Successes` 카운트 1 증가
+
+   <!-- 📸 capture: images/session-04/3d-event-grid-system-topic-metrics.png -->
+   <!--
+   ![Event Grid System Topic 의 Publish Events 와 Delivery Successes 메트릭을 보여 주는 Azure Portal 스크린샷](../../images/session-04/3d-event-grid-system-topic-metrics.png)
+
+   Blob 업로드 1건에 대해 **Publish Events** 와 **Delivery Successes** 가 각각 1 씩 증가했는지 확인합니다. Delivery 가 0 이라면 System Topic 관리 ID 의 Service Bus Data Sender 역할 부여를 점검합니다.
+   -->
+
 5. **Cosmos DB** → **Data Explorer** → `chunks` 에서 `SELECT * FROM c WHERE c.doc_id = 'sample-policy'`, `doc_stats` 에서 집계 카운트 확인
+
+   <!-- 📸 capture: images/session-04/3e-cosmos-data-explorer-chunks.png -->
+   <!--
+   ![Data Explorer 에서 doc_id 가 sample-policy 인 청크 문서를 조회한 결과를 보여 주는 Azure Portal 스크린샷](../../images/session-04/3e-cosmos-data-explorer-chunks.png)
+
+   `chunks` 컨테이너 쿼리 결과에 임베딩이 포함된 청크 문서들이 나타나고, `doc_stats` 의 `chunk_count` 가 청크 개수와 일치하는지 확인합니다.
+   -->
 
 ### 실패 시뮬레이션 (선택)
 
@@ -525,6 +564,13 @@ az servicebus message send -g rg-ai200ws-dev --namespace-name $SB \
 ```
 
 약 1~2분 후 Portal 의 **Dead-lettered Messages** 카운트가 1 로 증가합니다.
+
+<!-- 📸 capture: images/session-04/3f-service-bus-dead-lettered-messages.png -->
+<!--
+![ingest-queue 의 Dead-lettered Messages 카운트 1 을 보여 주는 Azure Portal 스크린샷](../../images/session-04/3f-service-bus-dead-lettered-messages.png)
+
+잘못된 메시지가 5회 재시도 후 Dead Letter Queue 로 격리되어 **Dead-lettered Messages** 카운트가 1 로 증가했는지 확인합니다.
+-->
 
 ---
 

@@ -255,6 +255,13 @@ done
 
 5~10분 후 본인 이메일에 알림 메일 도착 여부를 확인합니다.
 
+<!-- 📸 capture: images/session-06/2-alert-notification-email.png -->
+<!--
+![Azure Monitor 오류율 경고 발화로 수신된 알림 이메일을 보여 주는 스크린샷](../../images/session-06/2-alert-notification-email.png)
+
+이메일 제목에 alert 이름 `alert-error-rate-...` 가 포함되어 있는지, 본문의 검색 결과 수가 임계값 5 를 초과했는지 확인합니다. 메일이 오지 않으면 Action Group 구독 확인 메일의 `Subscribe` 링크를 클릭했는지 먼저 점검합니다.
+-->
+
 ---
 
 ## 3단계 · Azure Portal UI 에서 확인
@@ -262,9 +269,41 @@ done
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
 1. **Application Insights** → **Workbooks** → `AI-200 Workshop 관측성` — P95 latency · 분당 토큰 · 캐시 hit rate 가 한 화면에 시각화
+
+   <!-- 📸 capture: images/session-06/3a-workbook-overview.png -->
+   <!--
+   ![P95 latency·분당 토큰·캐시 hit rate 차트가 표시된 워크샵 워크북을 보여 주는 Azure Portal 스크린샷](../../images/session-06/3a-workbook-overview.png)
+
+   워크북의 세 차트 — P95 latency · 분당 토큰 · 캐시 hit rate — 에 2단계에서 발생시킨 트래픽이 반영되어 있는지 확인합니다. 분당 토큰 차트에 `tokens.prompt` 와 `tokens.completion` 두 계열이 보이면 OpenTelemetry 메트릭 발행이 정상입니다.
+   -->
+
 2. **Application Insights** → **Transaction search** → 최근 `POST /api/chat` 한 건 → trace 트리에 `rag.retrieve`(`retrieval.count`) · `rag.generate`(`tokens.prompt`/`tokens.completion`) · `cache.lookup`(`cache_hit`) span 노출
+
+   <!-- 📸 capture: images/session-06/3b-transaction-search-span-tree.png -->
+   <!--
+   ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷](../../images/session-06/3b-transaction-search-span-tree.png)
+
+   자동 계측된 `POST /api/chat` request span 아래에 `rag.retrieve` · `rag.generate` · `cache.lookup` 이 자식 span 으로 중첩되어 있는지 확인합니다. 각 span 을 선택하면 `retrieval.count` · `tokens.prompt` 같은 attribute 가 customDimensions 에 표시됩니다.
+   -->
+
 3. **Application Insights** → **Failures** → `/api/_chaos` 호출의 stack trace
+
+   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace.png -->
+   <!--
+   ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷](../../images/session-06/3c-failures-chaos-stack-trace.png)
+
+   Failures 화면의 작업 목록에서 `POST /api/_chaos` 의 실패 10건이 집계되는지, 우측 패널에서 `intentional chaos` 예외의 stack trace 가 보이는지 확인합니다.
+   -->
+
 4. **Azure Monitor** → **Alerts** → 발화된 오류율 alert + 본인 이메일 메일
+
+   <!-- 📸 capture: images/session-06/3d-alerts-fired-error-rate.png -->
+   <!--
+   ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷](../../images/session-06/3d-alerts-fired-error-rate.png)
+
+   Alerts 목록에 `alert-error-rate-...` 가 **Fired(발생됨)** 상태로 표시되는지 확인합니다. Action Group 에 등록한 본인 이메일로 같은 내용의 알림 메일이 도착했는지도 함께 확인합니다.
+   -->
+
 5. (권장) **Application Insights** → **Logs** 에서 다음 KQL 직접 실행
 
    ```kusto
@@ -281,6 +320,13 @@ done
    | extend hit_rate = round(100.0 * hits / total, 1)
    | render timechart
    ```
+
+   <!-- 📸 capture: images/session-06/3e-logs-custom-metrics-timechart.png -->
+   <!--
+   ![customMetrics KQL 결과가 timechart 로 렌더링된 모습을 보여 주는 Azure Portal 스크린샷](../../images/session-06/3e-logs-custom-metrics-timechart.png)
+
+   토큰 쿼리는 `tokens.prompt` · `tokens.completion` 두 계열의 시계열로, 캐시 쿼리는 `hit_rate` 값이 채워진 차트로 렌더링되는지 확인합니다. 빈 결과라면 OpenTelemetry 메트릭(Counter) 발행이 누락된 상태입니다.
+   -->
 
 ---
 

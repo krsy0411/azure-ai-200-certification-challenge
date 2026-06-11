@@ -407,14 +407,45 @@ text-embedding-3-large     text-embedding-3-large      Standard
 
 1. **Azure AI Foundry** ([ai.azure.com](https://ai.azure.com)) → 좌측 메뉴 **Models + endpoints** (또는 **Deployments**) → `gpt-4o-mini` 와 `text-embedding-3-large` 두 카드 노출
    - 카드 클릭 → `Endpoint`, `Key` (사용 안 함, Managed Identity 사용), `Capacity (TPM)` 확인
+
+   <!-- 📸 capture: images/session-00/4a-foundry-model-deployments.png -->
+   <!--
+   ![gpt-4o-mini 와 text-embedding-3-large 두 모델 deployment 카드를 보여 주는 Azure AI Foundry 스크린샷](../../images/session-00/4a-foundry-model-deployments.png)
+
+   **Models + endpoints** 목록에 `gpt-4o-mini` 와 `text-embedding-3-large` 두 deployment 가 모두 노출되는지 확인합니다. 카드를 선택하면 `Endpoint` 와 `Capacity (TPM)` 값도 함께 확인할 수 있습니다.
+   -->
+
 2. **Resource Group `rg-ai200ws-dev`** → **Overview** → 자원 목록
    - Azure OpenAI account + Azure OpenAI deployment (Cognitive Services 카테고리)
    - Log Analytics Workspace
    - Application Insights
    - Key Vault
    - User Assigned Managed Identity
+
+   <!-- 📸 capture: images/session-00/4b-resource-group-overview.png -->
+   <!--
+   ![rg-ai200ws-dev Resource Group 의 Overview 자원 목록을 보여 주는 Azure Portal 스크린샷](../../images/session-00/4b-resource-group-overview.png)
+
+   자원 목록에 Azure OpenAI account · Log Analytics Workspace · Application Insights · Key Vault · User Assigned Managed Identity 가 모두 보이는지 확인합니다.
+   -->
+
 3. **Key Vault** → **Access control (IAM)** → **Role assignments** 탭 → User Assigned Managed Identity 가 어떤 역할도 갖지 않음 (session-01 에서 부여 예정)
+
+   <!-- 📸 capture: images/session-00/4c-key-vault-iam-role-assignments.png -->
+   <!--
+   ![Key Vault 의 Role assignments 탭을 보여 주는 Azure Portal 스크린샷](../../images/session-00/4c-key-vault-iam-role-assignments.png)
+
+   **Role assignments** 탭에 User Assigned Managed Identity 가 아직 어떤 역할도 갖고 있지 않은 상태인지 확인합니다. `Key Vault Secrets User` 역할은 session-01 에서 부여됩니다.
+   -->
+
 4. **Azure OpenAI account** → **Access control (IAM)** → User Assigned Managed Identity 에 `Cognitive Services OpenAI User` 가 보임
+
+   <!-- 📸 capture: images/session-00/4d-aoai-iam-openai-user-role.png -->
+   <!--
+   ![Azure OpenAI account 에 Cognitive Services OpenAI User 역할이 부여된 것을 보여 주는 Azure Portal 스크린샷](../../images/session-00/4d-aoai-iam-openai-user-role.png)
+
+   **Role assignments** 목록에서 User Assigned Managed Identity 에 `Cognitive Services OpenAI User` 역할이 부여되어 있는지 확인합니다.
+   -->
 
 ---
 

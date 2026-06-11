@@ -404,10 +404,34 @@ uv run --project apps/api python scripts/seed_both.py
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
 1. **PostgreSQL Flexible Server** → **Server parameters** → 검색창에 `azure.extensions` 입력 → 값에 `VECTOR` 가 포함되어 있는지 확인
+
+   <!-- 📸 capture: images/session-02/3a-postgres-server-parameters-azure-extensions.png -->
+   <!--
+   ![PostgreSQL Flexible Server 의 Server parameters 에서 azure.extensions 값을 보여 주는 Azure Portal 스크린샷](../../images/session-02/3a-postgres-server-parameters-azure-extensions.png)
+
+   `azure.extensions` 파라미터의 **VALUE** 에 `VECTOR` 가 포함되어 있는지 확인합니다. 이 allowlist 에 없으면 `CREATE EXTENSION vector` 가 실패합니다.
+   -->
+
 2. **PostgreSQL Flexible Server** → **Metrics** → 두 메트릭 추가
    - `CPU percent` — seed 실행 직후 스파이크
    - `Active Connections` — 풀 크기 만큼 일시적으로 증가
+
+   <!-- 📸 capture: images/session-02/3b-postgres-metrics-cpu-active-connections.png -->
+   <!--
+   ![PostgreSQL Flexible Server 의 CPU percent 와 Active Connections 메트릭 차트를 보여 주는 Azure Portal 스크린샷](../../images/session-02/3b-postgres-metrics-cpu-active-connections.png)
+
+   seed 실행 직후 `CPU percent` 가 스파이크를 그리는지, `Active Connections` 가 연결 풀 크기만큼 일시적으로 증가했다가 내려오는지 확인합니다.
+   -->
+
 3. **PostgreSQL Flexible Server** → **Query performance insight** (또는 **Server logs**) → 가장 비싼 쿼리 상위에 `SELECT ... ORDER BY embedding <=> ...` 가 노출
+
+   <!-- 📸 capture: images/session-02/3c-postgres-query-performance-insight.png -->
+   <!--
+   ![PostgreSQL Flexible Server 의 Query performance insight 에서 벡터 검색 쿼리를 보여 주는 Azure Portal 스크린샷](../../images/session-02/3c-postgres-query-performance-insight.png)
+
+   가장 비싼 쿼리 상위에 `SELECT ... ORDER BY embedding <=> ...` 형태의 벡터 검색 쿼리가 노출되는지 확인합니다.
+   -->
+
 4. (선택) `psql` 안에서 `EXPLAIN ANALYZE` 실행
 
    ```sql

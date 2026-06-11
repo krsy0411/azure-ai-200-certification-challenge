@@ -332,7 +332,21 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
    기대 — `FT._LIST` 에 `rag_cache_idx` 노출, `FT.INFO` 의 `num_docs` 가 호출 횟수만큼 증가, `KEYS rag:*` 에 캐시 키들이 노출됩니다.
 
+   <!-- 📸 capture: images/session-03/3a-redis-console-ft-info.png -->
+   <!--
+   ![Azure Managed Redis Console 에서 FT._LIST 와 FT.INFO, KEYS 명령 실행 결과를 보여 주는 Azure Portal 스크린샷](../../images/session-03/3a-redis-console-ft-info.png)
+
+   Console 에서 실행한 `FT._LIST` 결과에 `rag_cache_idx` 가 나타나고, `KEYS rag:*` 에 캐시 키가 노출되는지 확인합니다. `FT.INFO` 의 `num_docs` 가 호출 횟수와 일치하는지 함께 확인합니다.
+   -->
+
 2. **Managed Redis** → **Metrics** → `Operations Per Second` · `Cache Hits` 추가
+
+   <!-- 📸 capture: images/session-03/3b-redis-metrics-ops-cache-hits.png -->
+   <!--
+   ![Azure Managed Redis 의 Operations Per Second 와 Cache Hits 메트릭 차트를 보여 주는 Azure Portal 스크린샷](../../images/session-03/3b-redis-metrics-ops-cache-hits.png)
+
+   API 호출 시점에 **Operations Per Second** 가 튀고, 캐시 hit 가 발생한 시점에 **Cache Hits** 가 증가하는지 확인합니다.
+   -->
 
 3. **Application Insights** → **Logs** 에서 다음 KQL 실행
 
@@ -346,9 +360,23 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
    기대 — 첫 호출 시점에 miss 1, 두 번째 호출 시점에 hit 1 로 시각화됩니다.
 
+   <!-- 📸 capture: images/session-03/3c-app-insights-cache-hit-columnchart.png -->
+   <!--
+   ![cache_hit 분포를 막대 차트로 시각화한 Application Insights Logs 결과를 보여 주는 Azure Portal 스크린샷](../../images/session-03/3c-app-insights-cache-hit-columnchart.png)
+
+   첫 호출 시점에는 misses 1, 두 번째 호출 시점에는 hits 1 로 집계되는지 차트에서 확인합니다.
+   -->
+
 4. **Application Insights** → **Transaction search** → 최근 `POST /api/chat` 두 건 비교
    - 첫 건은 `cache.lookup` (miss) 뒤에 retrieve · generate span 이 이어짐
    - 두 번째 건은 `cache.lookup` 만 보이고 그 뒤 span 이 없음 (캐시 hit 라 RAG 우회)
+
+   <!-- 📸 capture: images/session-03/3d-transaction-search-cache-hit-trace.png -->
+   <!--
+   ![캐시 miss 와 hit 두 건의 POST /api/chat 트랜잭션 상세를 비교해 보여 주는 Application Insights Transaction search 의 Azure Portal 스크린샷](../../images/session-03/3d-transaction-search-cache-hit-trace.png)
+
+   첫 번째 건은 `cache.lookup` 뒤에 retrieve · generate span 이 이어지고, 두 번째 건은 `cache.lookup` 만 남고 후속 span 이 없는지 확인합니다.
+   -->
 
 ---
 
