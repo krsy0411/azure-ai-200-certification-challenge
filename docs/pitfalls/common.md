@@ -45,6 +45,33 @@
 - 원인 — RBAC-only Key Vault 는 본인에게도 명시적으로 `Key Vault Secrets User` 등의 역할이 부여되어 있어야 함
 - 회피 — 본인에게 임시 부여하거나 CLI (`az keyvault secret list`) 사용
 
+### `az account get-access-token` 은 `--resource` (not `--resource-url`) (session-02)
+
+- 증상 — Entra 토큰으로 `psql` 접속 시 토큰 발급 명령이 `ERROR: unrecognized arguments: --resource-url https://ossrdbms-aad.database.windows.net` 으로 실패
+- 원인 — `az account get-access-token` 은 `--resource-url` 이 아니라 `--resource` 인자를 받음
+- 회피 — `--resource https://ossrdbms-aad.database.windows.net` 으로 호출
+
+  ```bash
+  PGPASSWORD=$(az account get-access-token \
+    --resource https://ossrdbms-aad.database.windows.net \
+    --query accessToken -o tsv)
+  ```
+
+### PostgreSQL Entra 전용 인증 — psql 접속 3대 전제 (session-02)
+
+- 증상 — `psql` 접속이 거부 (FATAL) 되거나 timeout 으로 멈추거나 인증에 실패. PostgreSQL Flexible Server 가 Entra ID 전용 인증 (`passwordAuth` 비활성) 이라 비밀번호 접속이 아예 불가
+- 원인 — 다음 세 전제 중 하나라도 어긋남
+  - **Entra 관리자 = `userObjectId`** — 배포 명령에 `userObjectId` 를 넘기지 않으면 관리자 부여 모듈이 `if (!empty(userObjectId))` 조건으로 건너뛰어, 본인이 관리자로 등록되지 않아 접속 거부
+  - **firewall = 본인 IP** — 배포 후 네트워크가 바뀌어 (다른 Wi-Fi · VPN 등) IP 가 달라지면 firewall 에 막혀 timeout
+  - **1시간 토큰** — `az account get-access-token` 으로 받은 Entra ID 토큰은 약 1시간 후 만료. 만료된 토큰을 `PGPASSWORD` 로 쓰면 인증 실패
+- 회피 — 배포 시 `userObjectId=$OID` 를 전달, IP 가 바뀌면 `az postgres flexible-server firewall-rule create` 로 추가하거나 `devClientIpAddress` 를 갱신해 재배포, 토큰은 만료 전 재발급 후 재접속
+
+  ```bash
+  PGPASSWORD=$(az account get-access-token \
+    --resource https://ossrdbms-aad.database.windows.net \
+    --query accessToken -o tsv)
+  ```
+
 ---
 
 ## Bicep · IaC
@@ -234,6 +261,16 @@
 - 증상 — 앱 시작 시 PoolTimeout (30s) 후 dead
 - 원인 — 풀 초기화 콜백에서 `register_vector_async` 호출. DB 에 vector extension 이 없으면 실패하고 풀 초기화 자체가 실패
 - 회피 — 부트스트랩 스크립트로 `CREATE EXTENSION vector` 를 먼저 실행하고, 그 다음 앱을 시작
+
+### PostgreSQL `SET LOCAL` 은 파라미터 바인딩 불가 (session-02)
+
+- 증상 — `hnsw.ef_search` 등을 `SET LOCAL hnsw.ef_search = %s` 로 바인딩하면 `psycopg.errors.SyntaxError: syntax error at or near "$1"` 으로 실패
+- 원인 — PostgreSQL 의 `SET` / `SET LOCAL` 명령은 prepared statement 파라미터 (`$1`) 를 지원하지 않음. psycopg 가 `%s` 를 `$1` 로 변환해 보내면서 구문 오류 발생
+- 회피 — 값을 직접 삽입. 정수형 값은 `int()` 로 캐스팅해 SQL injection 을 막고 f-string 으로 삽입
+
+  ```python
+  await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")
+  ```
 
 ### RediSearch TAG 필드의 하이픈 escape 누락 (session-03)
 

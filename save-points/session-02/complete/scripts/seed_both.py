@@ -206,7 +206,7 @@ async def _search_pg(
     async with await psycopg.AsyncConnection.connect(_pg_conninfo(token)) as conn:
         await register_vector_async(conn)
         async with conn.transaction():
-            await conn.execute("SET LOCAL hnsw.ef_search = %s", (ef_search,))
+            await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")  # SET LOCAL 은 파라미터 바인딩 불가 — int 직접 삽입
             cur = await conn.execute(
                 "SELECT doc_id, embedding <=> %s AS d FROM chunks ORDER BY d LIMIT %s",
                 (HalfVector(query_emb), TOP_K),

@@ -5,22 +5,40 @@
 - `POST /api/chat` — 사용자 질문 → 답변 + 출처
 
 부팅 시점에 `azure-monitor-opentelemetry` 자동 계측을 활성화한다:
-- 인입 HTTP, 외부 HTTP (Azure OpenAI 등), Cosmos SDK 호출이 trace 로 기록됨
+- 인입 HTTP (FastAPI), 외부 HTTP (Azure OpenAI · Cosmos · PostgreSQL) 가 trace 로 기록됨
 - session-06 에서 비즈니스 의미가 담긴 커스텀 span 이 추가된다.
+
+자동 계측은 FastAPI app 인스턴스가 만들어지기 전에 켜야 한다. configure_azure_monitor 가
+app 생성 후(lifespan)에 호출되면, FastAPI 자동 계측이 이미 만들어진 app 에 적용되지 않아
+요청 span 이 기록되지 않는다. 따라서 import 최상단에서 계측을 활성화한다.
 """
 
-from contextlib import asynccontextmanager
+import os
 
 from azure.monitor.opentelemetry import configure_azure_monitor
-from fastapi import FastAPI, HTTPException
 
-from .clients.aoai import build_aoai_client
-from .models import ChatRequest, ChatResponse
-from .rag.chain import run_rag_chain
-from .settings import get_settings
-from .stores.base import VectorStore
-from .stores.cosmos_store import build_cosmos_store
-from .stores.pg_store import build_pg_store
+if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+    # connection string 은 환경변수에서 자동으로 읽는다.
+    configure_azure_monitor()
+    # azure-monitor-opentelemetry 가 자동 활성화하지 않는 async HTTP 클라이언트 계측을
+    # 명시적으로 켜, Azure OpenAI(httpx) · Cosmos(aiohttp) 호출이 dependency span 으로 남게 한다.
+    from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+    HTTPXClientInstrumentor().instrument()
+    AioHttpClientInstrumentor().instrument()
+
+from contextlib import asynccontextmanager  # noqa: E402
+
+from fastapi import FastAPI, HTTPException  # noqa: E402
+
+from .clients.aoai import build_aoai_client  # noqa: E402
+from .models import ChatRequest, ChatResponse  # noqa: E402
+from .rag.chain import run_rag_chain  # noqa: E402
+from .settings import get_settings  # noqa: E402
+from .stores.base import VectorStore  # noqa: E402
+from .stores.cosmos_store import build_cosmos_store  # noqa: E402
+from .stores.pg_store import build_pg_store  # noqa: E402
 
 
 async def build_store(settings) -> VectorStore:
@@ -37,13 +55,6 @@ async def lifespan(app: FastAPI):
     클라이언트는 `app.state` 에 보관해 요청 핸들러가 가져다 쓴다.
     """
     settings = get_settings()
-
-    # Azure Monitor + OpenTelemetry 자동 계측 활성화.
-    # APPLICATIONINSIGHTS_CONNECTION_STRING 환경변수가 설정되어 있을 때만 동작.
-    if settings.applicationinsights_connection_string:
-        configure_azure_monitor(
-            connection_string=settings.applicationinsights_connection_string,
-        )
 
     aoai_client = build_aoai_client(settings)
     store = await build_store(settings)
