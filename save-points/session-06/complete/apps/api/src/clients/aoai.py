@@ -56,7 +56,7 @@ async def chat_with_context(
     question: str,
     context: str,
 ) -> tuple[str, int, int]:
-    """검색된 chunk 컨텍스트와 질문을 받아 `gpt-4o-mini` 로 답변 생성.
+    """검색된 chunk 컨텍스트와 질문을 받아 `gpt-5-mini` 로 답변 생성.
 
     프롬프트 전략 — 시스템 메시지로 RAG 규칙을 고정하고, 사용자 메시지에
     `context` 와 `question` 을 분리해 전달한다. 학습용 단순 형태로, 본격 운영
@@ -78,8 +78,10 @@ async def chat_with_context(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.2,
-        max_tokens=512,
+        # gpt-5 계열(reasoning 모델)은 temperature 커스텀과 max_tokens 를 지원하지 않는다.
+        # temperature 는 기본값(1)만 허용되므로 생략하고, 토큰 상한은 max_completion_tokens 로 준다.
+        # reasoning 토큰이 출력 토큰과 함께 차감되므로 여유 있게 둔다.
+        max_completion_tokens=2048,
     )
     usage = response.usage
     prompt_tokens = usage.prompt_tokens if usage else 0

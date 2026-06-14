@@ -5,31 +5,38 @@
 - `POST /api/chat` — 사용자 질문 → 답변 + 출처
 
 부팅 시점에 `azure-monitor-opentelemetry` 자동 계측을 활성화한다:
-- 인입 HTTP, 외부 HTTP (Azure OpenAI 등), Cosmos SDK 호출이 trace 로 기록됨
+- 인입 HTTP (FastAPI), 외부 HTTP (Azure OpenAI · Cosmos), 가 trace 로 기록됨
 - session-06 에서 비즈니스 의미가 담긴 커스텀 span 이 추가된다.
+
+자동 계측은 FastAPI app 인스턴스가 만들어지기 전에 켜야 한다. configure_azure_monitor 가
+app 생성 후(lifespan)에 호출되면, FastAPI 자동 계측이 이미 만들어진 app 에 적용되지 않아
+요청 span 이 기록되지 않는다. 따라서 import 최상단에서 계측을 활성화한다.
 """
 
-from contextlib import asynccontextmanager
+import os
 
 from azure.monitor.opentelemetry import configure_azure_monitor
-from fastapi import FastAPI, HTTPException
 
-from .cache.semantic import SemanticCache, build_semantic_cache
-from .clients.aoai import build_aoai_client
-from .config.loader import AppConfig, load_app_config
-from .models import ChatRequest, ChatResponse
-from .rag.chain import run_rag_chain
-from .settings import get_settings
-from .stores.base import VectorStore
-from .stores.cosmos_store import build_cosmos_store
-from .stores.pg_store import build_pg_store
+if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+    # connection string 은 환경변수에서 자동으로 읽는다.
+    configure_azure_monitor()
+    # azure-monitor-opentelemetry 가 자동 활성화하지 않는 async HTTP 클라이언트 계측을
+    # 명시적으로 켜, Azure OpenAI(httpx) · Cosmos(aiohttp) 호출이 dependency span 으로 남게 한다.
+    from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
+    HTTPXClientInstrumentor().instrument()
+    AioHttpClientInstrumentor().instrument()
 
-async def build_store(settings, backend: str) -> VectorStore:
-    """선택된 백엔드로 벡터 스토어를 만든다 (cosmos | pg)."""
-    if backend == "pg":
-        return await build_pg_store(settings)
-    return build_cosmos_store(settings)
+from contextlib import asynccontextmanager  # noqa: E402
+
+from fastapi import FastAPI, HTTPException  # noqa: E402
+
+from .clients.aoai import build_aoai_client  # noqa: E402
+from .models import ChatRequest, ChatResponse  # noqa: E402
+from .rag.chain import run_rag_chain  # noqa: E402
+from .settings import get_settings  # noqa: E402
+from .stores.cosmos_store import build_cosmos_client, get_chunks_container  # noqa: E402
 
 
 @asynccontextmanager
@@ -40,49 +47,23 @@ async def lifespan(app: FastAPI):
     """
     settings = get_settings()
 
-    # Azure Monitor + OpenTelemetry 자동 계측 활성화.
-    # APPLICATIONINSIGHTS_CONNECTION_STRING 환경변수가 설정되어 있을 때만 동작.
-    if settings.applicationinsights_connection_string:
-        configure_azure_monitor(
-            connection_string=settings.applicationinsights_connection_string,
-        )
-
     aoai_client = build_aoai_client(settings)
-
-    # App Configuration — 설정되면 피처 플래그로 동작을 제어 (session-05).
-    app_config: AppConfig | None = None
-    if settings.app_config_endpoint:
-        app_config = await load_app_config(settings)
-
-    # 백엔드 선택 — enable_pg_backend 플래그가 있으면 그 값을, 없으면 환경변수를 따른다.
-    # (백엔드 전환은 시작 시 1회 — 캐시 토글과 달리 런타임 전환은 재시작 필요)
-    backend = settings.store_backend
-    if app_config is not None and app_config.is_enabled("enable_pg_backend"):
-        backend = "pg"
-    store = await build_store(settings, backend)
-
-    # 시맨틱 캐시 — Redis 가 구성돼 있으면 객체를 만들어 둔다. 실제 사용 여부는
-    # 요청마다 enable_semantic_cache 플래그로 결정 (App Configuration 없으면 cache_enabled).
-    cache: SemanticCache | None = None
-    if settings.redis_host and (settings.cache_enabled or app_config is not None):
-        cache = await build_semantic_cache(settings)
+    cosmos_client, cosmos_credential = build_cosmos_client(settings)
+    cosmos_container = await get_chunks_container(cosmos_client, settings)
 
     app.state.settings = settings
     app.state.aoai_client = aoai_client
-    app.state.store = store
-    app.state.cache = cache
-    app.state.app_config = app_config
+    app.state.cosmos_client = cosmos_client
+    app.state.cosmos_credential = cosmos_credential
+    app.state.cosmos_container = cosmos_container
 
     try:
         yield
     finally:
-        # 종료 시점 정리 — 토큰 갱신 백그라운드 스레드 · 연결 풀을 안전하게 종료
+        # 종료 시점 정리 — 토큰 갱신 백그라운드 스레드 등을 안전하게 종료
         await aoai_client.close()
-        await store.close()
-        if cache is not None:
-            await cache.close()
-        if app_config is not None:
-            await app_config.close()
+        await cosmos_client.close()
+        await cosmos_credential.close()
 
 
 app = FastAPI(
@@ -99,38 +80,20 @@ async def healthz() -> dict[str, bool]:
     return {"ok": True}
 
 
-@app.post("/api/_chaos")
-async def chaos() -> None:
-    """의도적으로 500 을 반환해 오류율·알림(session-06)을 검증한다."""
-    raise HTTPException(status_code=500, detail="intentional chaos")
-
-
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """RAG 파이프라인을 통해 답변 생성.
 
     1. 질문 임베딩
-    2. 선택된 벡터 스토어 (Cosmos DB 또는 PostgreSQL pgvector) 로 chunk top-k 검색
-    3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-4o-mini 호출
-
-    시맨틱 캐시 사용 여부는 App Configuration 의 enable_semantic_cache 플래그로 매 요청
-    평가한다 (포털 토글이 30~60초 안에 반영). App Configuration 이 없으면 시작 시 구성을 따른다.
+    2. Cosmos DB 벡터 검색으로 chunk top-k 검색
+    3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-5-mini 호출
     """
-    cache = app.state.cache
-    app_config: AppConfig | None = app.state.app_config
-    if app_config is not None:
-        # 폴링 주기에 맞춰 플래그 변경을 반영한 뒤 평가
-        await app_config.refresh()
-        if not app_config.is_enabled("enable_semantic_cache"):
-            cache = None
-
     try:
         return await run_rag_chain(
             question=request.q,
             aoai_client=app.state.aoai_client,
-            store=app.state.store,
+            cosmos_container=app.state.cosmos_container,
             settings=app.state.settings,
-            cache=cache,
         )
     except Exception as exc:
         # 운영 환경에서는 더 정교한 에러 분류와 재시도 정책이 필요하다.

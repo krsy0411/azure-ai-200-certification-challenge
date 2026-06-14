@@ -18,7 +18,7 @@
 - **한 문장 골** — 워크샵의 기반 자원 (Resource Group · Azure OpenAI · 로그 · Key Vault · User Assigned Managed Identity) 을 정의하는 Bicep 모듈을 직접 조립해 한 번의 배포로 올리고, Azure AI Foundry 포털에서 모델 deployment 두 개가 살아있음을 직접 확인
 - **새로 프로비저닝되는 자원**
   - `rg-ai200ws-dev` — 본 워크샵 전체가 들어갈 Resource Group
-  - Azure OpenAI account + 두 개 deployment (`gpt-4o-mini`, `text-embedding-3-large`)
+  - Azure OpenAI account + 두 개 deployment (`gpt-5-mini`, `text-embedding-3-large`)
   - Log Analytics Workspace — 워크샵 전체의 중앙 로그
   - Application Insights (workspace-based) — 애플리케이션 성능 모니터링
   - Key Vault — session-01 부터 시크릿·구성 보관
@@ -62,14 +62,38 @@ Copy-Item -Path save-points/session-00/start/* -Destination workshop -Recurse -F
 
 ## 1단계 · 도구 점검
 
-### 1.1 환경 한 줄 점검
+### 1.1 환경 점검
+
+다음 명령을 한 줄씩 실행해 필요한 도구가 모두 설치되어 있는지 확인합니다. 하나가 실패해도 나머지 점검은 이어서 진행합니다.
 
 ```bash
-python --version && node --version && docker info >/dev/null && echo "Docker OK" && \
-  az --version | head -1 && az bicep version && func --version && git --version
+# Python
+python3 --version
+
+# Node.js
+node --version
+
+# Azure CLI
+az --version | head -1
+
+# Bicep
+az bicep version
+
+# Azure Functions Core Tools
+func --version
+
+# Git
+git --version
+
+# Docker — 데몬이 실행 중이면 Docker OK 가 출력됩니다
+docker info >/dev/null && echo "Docker OK"
 ```
 
 모두 [PREREQUISITES.md](../../PREREQUISITES.md) 의 최소 버전 이상이어야 합니다.
+
+> [!NOTE]
+> - macOS 기본 환경에는 `python` 명령이 없고 `python3` 만 있습니다. 위 점검도 `python3 --version` 을 사용합니다
+> - 본 세션 (session-00) 에서는 Docker 를 사용하지 않으므로 `Docker OK` 가 출력되지 않아도 진행할 수 있습니다. 다만 컨테이너 이미지를 빌드하는 session-01 전까지는 Docker 를 실행해두어야 합니다
 
 ### 1.2 Azure 로그인 (개인 계정 사용)
 
@@ -237,6 +261,8 @@ module aoai '../../modules/session-00/aoai-account.bicep' = {
 
 `// -------- 6) Azure OpenAI deployment 2개 모듈 호출하기 (순차 생성)` 주석 아래에 추가합니다. 같은 모듈 (`aoai-deployment.bicep`) 을 chat·embedding 두 번 호출합니다. 같은 Azure OpenAI account 에 두 deployment 를 동시에 생성하면 409 Conflict 가 발생하므로, embedding 모듈의 `dependsOn` 에 chat 모듈을 명시해 **하나가 끝난 후 다음 하나를** 만들게 합니다.
 
+한 가지 차이에 주의합니다 — chat 모델인 `gpt-5-mini` 를 비롯한 gpt-5 계열은 리전 단위 `Standard` SKU 배포를 지원하지 않습니다. 그래서 chat 모듈 호출에만 `skuName: 'GlobalStandard'` 를 추가하고, embedding 모듈은 모듈 기본값인 `Standard` 를 그대로 사용합니다.
+
 ```bicep
 module aoaiChat '../../modules/session-00/aoai-deployment.bicep' = {
   scope: resourceGroup(rgName)
@@ -247,6 +273,8 @@ module aoaiChat '../../modules/session-00/aoai-deployment.bicep' = {
     modelName: chatModelName
     modelVersion: chatModelVersion
     capacity: chatCapacityK
+    // gpt-5 계열은 리전 Standard SKU 미지원 — GlobalStandard 로 배포.
+    skuName: 'GlobalStandard'
   }
 }
 
@@ -394,10 +422,12 @@ az cognitiveservices account deployment list \
 
 ```
 Name                       Model                       Sku
--------------------------  --------------------------  ----------
-gpt-4o-mini                gpt-4o-mini                 Standard
+-------------------------  --------------------------  --------------
+gpt-5-mini                 gpt-5-mini                  GlobalStandard
 text-embedding-3-large     text-embedding-3-large      Standard
 ```
+
+`gpt-5-mini` 의 SKU 가 `GlobalStandard` 인지 확인합니다 — [2.7 Azure OpenAI deployment 두 개 (순차 생성)](#27-azure-openai-deployment-두-개-순차-생성) 에서 chat 모듈에만 `skuName` 을 지정한 결과입니다.
 
 ---
 
@@ -405,14 +435,14 @@ text-embedding-3-large     text-embedding-3-large      Standard
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
-1. **Azure AI Foundry** ([ai.azure.com](https://ai.azure.com)) → 좌측 메뉴 **Models + endpoints** (또는 **Deployments**) → `gpt-4o-mini` 와 `text-embedding-3-large` 두 카드 노출
+1. **Azure AI Foundry** ([ai.azure.com](https://ai.azure.com)) → 좌측 메뉴 **Models + endpoints** (또는 **Deployments**) → `gpt-5-mini` 와 `text-embedding-3-large` 두 카드 노출
    - 카드 클릭 → `Endpoint`, `Key` (사용 안 함, Managed Identity 사용), `Capacity (TPM)` 확인
 
    <!-- 📸 capture: images/session-00/4a-foundry-model-deployments.png -->
    <!--
-   ![gpt-4o-mini 와 text-embedding-3-large 두 모델 deployment 카드를 보여 주는 Azure AI Foundry 스크린샷](../../images/session-00/4a-foundry-model-deployments.png)
+   ![gpt-5-mini 와 text-embedding-3-large 두 모델 deployment 카드를 보여 주는 Azure AI Foundry 스크린샷](../../images/session-00/4a-foundry-model-deployments.png)
 
-   **Models + endpoints** 목록에 `gpt-4o-mini` 와 `text-embedding-3-large` 두 deployment 가 모두 노출되는지 확인합니다. 카드를 선택하면 `Endpoint` 와 `Capacity (TPM)` 값도 함께 확인할 수 있습니다.
+   **Models + endpoints** 목록에 `gpt-5-mini` 와 `text-embedding-3-large` 두 deployment 가 모두 노출되는지 확인합니다. 카드를 선택하면 `Endpoint` 와 `Capacity (TPM)` 값도 함께 확인할 수 있습니다.
    -->
 
 2. **Resource Group `rg-ai200ws-dev`** → **Overview** → 자원 목록
@@ -456,6 +486,16 @@ text-embedding-3-large     text-embedding-3-large      Standard
 
 > [!WARNING]
 > **`koreacentral` 모델 미가용** — 일부 모델이 가용하지 않을 때가 있습니다. 배포 명령에 `--parameters aoaiLocation=eastus` 또는 `--parameters aoaiLocation=japaneast` 를 추가해 Azure OpenAI 리전만 분리합니다.
+
+> [!WARNING]
+> **모델 deprecation — 신규 deployment 생성 차단** — Azure OpenAI 모델은 버전별로 수명 주기가 있어, 일정 시점이 지나면 `what-if` 단계에서 `ServiceModelDeprecated` 오류와 함께 신규 deployment 생성이 차단됩니다 (기존 deployment 의 추론은 추론 중단일까지 동작). 본 워크샵 기본 모델 (`gpt-5-mini`, version `2025-08-07`) 도 시간이 지나면 같은 오류를 만날 수 있습니다. 그때는 다음 명령으로 현재 배포 가능한 모델을 확인합니다.
+>
+> ```bash
+> az cognitiveservices model list -l koreacentral \
+>   --query "[?model.format=='OpenAI'].{name:model.name, version:model.version}" -o table
+> ```
+>
+> 확인한 후속 모델로 배포 명령에 `--parameters chatModelName=... chatModelVersion=...` 을 추가해 교체합니다. 이때 SKU 도 함께 확인합니다 — gpt-5 계열처럼 리전 `Standard` SKU 를 지원하지 않는 모델은 [2.7 Azure OpenAI deployment 두 개 (순차 생성)](#27-azure-openai-deployment-두-개-순차-생성) 처럼 `skuName: 'GlobalStandard'` 로 배포해야 합니다. 실측 사례는 [docs/pitfalls/common.md](../pitfalls/common.md) 참고.
 
 > [!CAUTION]
 > **`bicepparam` 에 사용자 식별 정보 작성 금지** — 본인 objectId, IP 는 `bicepparam` 파일에 작성해두지 않고, 배포 명령을 실행할 때마다 `--parameters key=value` 인자로 직접 넘겨주는 방식으로 전달합니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).

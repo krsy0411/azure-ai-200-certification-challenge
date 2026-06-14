@@ -14,6 +14,9 @@ dependencies = [
 
     # Azure authentication
     "azure-identity>=1.19.0",
+    # azure.identity.aio (async credential) 는 async HTTP transport 로 aiohttp 를 요구한다.
+    # 명시하지 않으면 컨테이너 이미지에서 ImportError: aiohttp package is not installed 로 부팅 실패.
+    "aiohttp>=3.10.0",
 
     # Azure OpenAI
     "openai>=1.54.0",
@@ -23,6 +26,10 @@ dependencies = [
 
     # Observability — Azure Monitor + OpenTelemetry 자동 계측 묶음
     "azure-monitor-opentelemetry>=1.6.0",
+    # azure-monitor 가 자동 활성화하지 않는 async HTTP 클라이언트 계측 — Azure OpenAI(httpx),
+    # Cosmos(aiohttp) 호출을 dependency span 으로 남기려면 명시적으로 추가해야 한다.
+    "opentelemetry-instrumentation-httpx",
+    "opentelemetry-instrumentation-aiohttp-client",
 ]
 
 [dependency-groups]

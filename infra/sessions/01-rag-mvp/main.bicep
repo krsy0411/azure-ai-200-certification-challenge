@@ -39,10 +39,10 @@ param userObjectId string = ''
 // -------- 컨테이너 이미지 태그 --------------------------------------------------
 
 @description('FastAPI 이미지 태그 (예: s01, latest)')
-param apiImageTag string = 's01'
+param apiImageTag string = ''
 
 @description('Next.js 이미지 태그')
-param webImageTag string = 's01'
+param webImageTag string = ''
 
 // -------- Cosmos DB 파라미터 ----------------------------------------------------
 
@@ -244,7 +244,7 @@ module caApi '../../modules/session-01/container-app.bicep' = {
     userAssignedIdentityId: uami.id
     userAssignedIdentityClientId: uami.properties.clientId
     acrLoginServer: acr.outputs.loginServer
-    containerImage: 'api:${apiImageTag}'
+    containerImage: empty(apiImageTag) ? '' : 'api:${apiImageTag}'
     targetPort: 8000
     externalIngress: true
     minReplicas: 0
@@ -258,7 +258,7 @@ module caApi '../../modules/session-01/container-app.bicep' = {
       }
       {
         name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
-        value: 'gpt-4o-mini'
+        value: 'gpt-5-mini'
       }
       {
         name: 'AZURE_OPENAI_EMBED_DEPLOYMENT'
@@ -284,11 +284,6 @@ module caApi '../../modules/session-01/container-app.bicep' = {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
         value: appInsights.properties.ConnectionString
       }
-      {
-        // OpenTelemetry 샘플링 — 학습 단계에서는 모든 trace 를 본다
-        name: 'OTEL_TRACES_SAMPLER'
-        value: 'always_on'
-      }
     ]
     tags: commonTags
   }
@@ -310,7 +305,7 @@ module caWeb '../../modules/session-01/container-app.bicep' = {
     userAssignedIdentityId: uami.id
     userAssignedIdentityClientId: uami.properties.clientId
     acrLoginServer: acr.outputs.loginServer
-    containerImage: 'web:${webImageTag}'
+    containerImage: empty(webImageTag) ? '' : 'web:${webImageTag}'
     targetPort: 3000
     externalIngress: true
     minReplicas: 0

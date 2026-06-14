@@ -40,7 +40,7 @@ flowchart TB
   end
 
   subgraph AI[AI 서비스]
-    AOAI["Azure OpenAI<br/>gpt-4o-mini · text-embedding-3-large"]
+    AOAI["Azure OpenAI<br/>gpt-5-mini · text-embedding-3-large"]
   end
 
   subgraph Config[설정·시크릿]

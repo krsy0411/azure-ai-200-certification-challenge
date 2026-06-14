@@ -63,7 +63,7 @@ def _build_corpus() -> list[tuple[str, str, str]]:
         "복지": ["식대 지원", "건강검진 안내", "동호회 지원금", "교육비 환급", "경조금 지급"],
         "장비": ["모니터 추가 신청", "소프트웨어 라이선스", "사내 와이파이", "회의실 예약", "프린터 사용"],
     }
-    regions = ["본사", "판교 지사", "부산 지사", "원격"]
+    regions = ["본사", "판교 지사", "부산 지사", "대전 지사", "원격"]
     corpus: list[tuple[str, str, str]] = []
     for cat, items in categories.items():
         for item in items:

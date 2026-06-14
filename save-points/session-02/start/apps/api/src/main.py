@@ -80,7 +80,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     1. 질문 임베딩
     2. 선택된 벡터 스토어 (Cosmos DB 또는 PostgreSQL pgvector) 로 chunk top-k 검색
-    3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-4o-mini 호출
+    3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-5-mini 호출
     """
     try:
         return await run_rag_chain(

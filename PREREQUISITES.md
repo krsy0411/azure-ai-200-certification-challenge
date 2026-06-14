@@ -46,7 +46,7 @@ Azure 의 각 리전은 자원 종류별로 **사용 가능한 한도** (CPU 코
 
 | 자원 | 필요한 한도 |
 |---|---|
-| Azure OpenAI `gpt-4o-mini` | 분당 60K 토큰 |
+| Azure OpenAI `gpt-5-mini` | 분당 60K 토큰 |
 | Azure OpenAI `text-embedding-3-large` | 분당 50K 토큰 |
 | Azure Container Apps Consumption | 10 vCPU |
 | PostgreSQL Flexible (Burstable) | 1 vCPU |

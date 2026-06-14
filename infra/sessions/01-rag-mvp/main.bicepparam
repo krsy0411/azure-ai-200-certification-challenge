@@ -12,8 +12,8 @@ param location = 'koreacentral'
 
 // 컨테이너 이미지 태그.
 // 본 세션 docs 의 'docker build → docker push' 명령에서 사용한 태그와 일치시킵니다.
-param apiImageTag = 's01'
-param webImageTag = 's01'
+param apiImageTag = ''
+param webImageTag = ''
 
 // Cosmos DB 데이터베이스 / 컨테이너 이름
 param cosmosDatabaseName = 'appdb'
