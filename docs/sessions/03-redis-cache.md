@@ -28,8 +28,8 @@
   - `redis-py` 5.x async + `redis-entraid` credential provider
   - RediSearch `FT.CREATE` (FLAT 벡터 인덱스) + `FT.SEARCH` KNN
   - OpenTelemetry 커스텀 span `cache.lookup` 에 `cache_hit` 속성 부여
-- **Portal 에서 확인할 지표 / 데이터**
-  - Managed Redis → Console — `FT.INFO`, `KEYS rag:*` 로 캐시 키 직접 조회
+- **확인할 지표 / 데이터**
+  - 로컬 `redis-cli`(Entra 토큰 접속) — `FT.INFO`, `KEYS rag:*` 로 캐시 인덱스·키 직접 조회
   - Managed Redis → Metrics — Ops/sec · Cache hits
   - Application Insights → Logs (KQL) — `cache_hit` 분포
 
@@ -183,10 +183,13 @@ RAG 응답을 캐싱할 때 세 가지 전략이 있습니다.
 | **시맨틱 유사도** | 질문 임베딩 벡터 | 새 질문 임베딩이 기존 캐시 키와 cosine 유사도 ≥ 임계값 | paraphrase 흡수 · hit 율 높음 | 임계값 튜닝 필요 · 잘못된 hit 위험 |
 | **RAG 인지 (튜플)** | (질문 임베딩, 사용 문서 셋) | 의미 + 문서 셋 모두 일치 | 문서 변경 시 자동 무효화 | 캐시 키 공간이 커지고 hit 율이 다소 떨어짐 |
 
-본 워크샵은 **시맨틱 유사도 + 임계값 0.92** (한국어 paraphrase 에 보수적) + TTL 24h 를 채택합니다.
+본 워크샵은 **시맨틱 유사도 + 임계값 0.62** + TTL 24h 를 채택합니다.
+
+> [!IMPORTANT]
+> **임계값은 임베딩 모델 기준으로 실측해 정합니다** — `text-embedding-3-large` 로 한국어 paraphrase 쌍을 실측하면 같은 의미의 질문이 cosine **0.6~0.76**, 의미가 다른 질문이 **0.2~0.3** 에 분포합니다. 예) "회사 휴가 정책 알려줘" ↔ "휴가 규정이 어떻게 돼?" = **0.64**, ↔ "연차 어떻게 신청해?" = 0.23. 따라서 둘을 가르는 컷오프는 **0.62** 근방입니다. (영어 SBERT 류 직관으로 0.9 대를 쓰면 같은 의미인데도 전부 miss 가 됩니다.)
 
 > [!TIP]
-> **시험 단골 패턴** — "RAG 응답 캐싱은 문자열 매칭으로 부족하다 — 임베딩 기반 시맨틱 캐시" 가 정답입니다. 임계값을 너무 낮추면 잘못된 hit, 너무 높이면 캐시가 거의 비어 있으므로 0.90 ~ 0.95 범위에서 튜닝합니다.
+> **시험 단골 패턴** — "RAG 응답 캐싱은 문자열 매칭으로 부족하다 — 임베딩 기반 시맨틱 캐시" 가 정답입니다. 임계값을 너무 낮추면 잘못된 hit, 너무 높이면 캐시가 거의 비어 있으므로 **반드시 쓰는 임베딩 모델·언어로 같은 의미/다른 의미 쌍의 유사도를 실측한 뒤** 그 사이 값으로 정합니다 (본 워크샵 모델 기준 0.55~0.65).
 
 ### 2.2 Redis 클라이언트 구현
 
@@ -202,8 +205,12 @@ RAG 응답을 캐싱할 때 세 가지 전략이 있습니다.
         ssl=True,
         credential_provider=credential_provider,
         decode_responses=False,
+        protocol=2,
     )
 ```
+
+> [!CAUTION]
+> **`protocol=2` (RESP2) 를 반드시 명시** — Azure Managed Redis 는 `redis-py` 8.x 와 기본적으로 RESP3 로 협상합니다. 그런데 `redis-py` 의 고수준 `ft().search()` 결과 파서가 RESP3 응답(`{'total_results': ..., 'results': [...]}`)을 처리하지 못해 `result.docs` 가 **항상 빈 리스트**가 됩니다. 그러면 인덱스·데이터가 멀쩡하고 `FT.SEARCH` 를 raw 로 실행하면 매칭이 나오는데도, 코드 상으로는 **임계값과 무관하게 캐시가 영원히 miss** 합니다. `protocol=2` 로 고정하면 정상 파싱됩니다. (디버깅 팁: `FT.INFO` 의 `num_docs` 는 증가하는데 앱은 계속 miss 면 이 문제를 의심합니다.)
 
 ### 2.3 시맨틱 캐시 구현
 
@@ -318,11 +325,25 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 ---
 
-## 3단계 · Azure Portal UI 에서 확인
+## 3단계 · 데이터 · 지표 확인
 
-[Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
+1번은 **로컬 `redis-cli` 터미널**에서, 2~4번은 [Azure Portal](https://portal.azure.com) 에서 확인합니다.
 
-1. **Managed Redis** → **Console** (브라우저 안의 redis-cli) — 다음을 한 줄씩 실행
+1. **`redis-cli` 로 캐시 인덱스·키 직접 조회**
+
+   > [!CAUTION]
+   > **Azure Managed Redis 에는 브라우저 Console 블레이드가 없습니다** — 클래식 *Azure Cache for Redis* 의 Console 과 혼동하기 쉽습니다. Managed Redis(Redis Enterprise) 는 포털 안에서 명령을 실행할 수 없으므로 로컬 `redis-cli`(또는 RedisInsight)로 접속합니다. 게다가 본 워크샵 클러스터는 access key 인증을 꺼 두었으므로 (`accessKeysAuthentication=Disabled`) Entra 토큰으로 접속합니다.
+
+   ```bash
+   HOST=$(az redisenterprise list -g rg-ai200ws-dev --query "[0].hostName" -o tsv)
+   OID=$(az ad signed-in-user show --query id -o tsv)
+   TOKEN=$(az account get-access-token --scope https://redis.azure.com/.default --query accessToken -o tsv)
+
+   # --user = access policy 에 부여된 Entra object ID, --pass = Entra 액세스 토큰(약 1시간 유효)
+   redis-cli -h "$HOST" -p 10000 --tls --user "$OID" --pass "$TOKEN" --no-auth-warning
+   ```
+
+   접속되면 다음을 한 줄씩 실행합니다.
 
    ```
    FT._LIST
@@ -332,11 +353,11 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
    기대 — `FT._LIST` 에 `rag_cache_idx` 노출, `FT.INFO` 의 `num_docs` 가 호출 횟수만큼 증가, `KEYS rag:*` 에 캐시 키들이 노출됩니다.
 
-   <!-- 📸 capture: images/session-03/3a-redis-console-ft-info.png -->
+   <!-- 📸 capture: images/session-03/3a-redis-cli-ft-info.png -->
    <!--
-   ![Azure Managed Redis Console 에서 FT._LIST 와 FT.INFO, KEYS 명령 실행 결과를 보여 주는 Azure Portal 스크린샷](../../images/session-03/3a-redis-console-ft-info.png)
+   ![Entra 토큰으로 접속한 redis-cli 터미널에서 FT._LIST · FT.INFO · KEYS 명령을 실행한 결과를 보여 주는 스크린샷](../../images/session-03/3a-redis-cli-ft-info.png)
 
-   Console 에서 실행한 `FT._LIST` 결과에 `rag_cache_idx` 가 나타나고, `KEYS rag:*` 에 캐시 키가 노출되는지 확인합니다. `FT.INFO` 의 `num_docs` 가 호출 횟수와 일치하는지 함께 확인합니다.
+   `redis-cli` 에서 실행한 `FT._LIST` 결과에 `rag_cache_idx` 가 나타나고, `KEYS rag:*` 에 캐시 키가 노출되는지 확인합니다. `FT.INFO` 의 `num_docs` 가 호출 횟수와 일치하는지 함께 확인합니다.
    -->
 
 2. **Managed Redis** → **Metrics** → `Operations Per Second` · `Cache Hits` 추가
@@ -401,7 +422,7 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 > **RediSearch 데이터베이스는 `evictionPolicy=NoEviction` 필수** — 다른 eviction policy 는 RediSearch 인덱스와 충돌해 `FT.SEARCH` 결과가 stale 해집니다. Bicep `redis-enterprise-database.bicep` 에서 `NoEviction` 으로 고정되어 있습니다.
 
 > [!CAUTION]
-> **cosine 유사도 vs distance 환산** — RediSearch 의 COSINE 은 distance(0=동일 ~ 2=반대) 를 반환합니다. "유사도 ≥ 0.92" 컷오프는 코드에서 `1 - distance ≥ 0.92` 로 환산해야 합니다. 이 환산을 빼먹으면 전부-hit 또는 전부-miss 가 되는데 원인 추적이 어렵습니다.
+> **cosine 유사도 vs distance 환산** — RediSearch 의 COSINE 은 distance(0=동일 ~ 2=반대) 를 반환합니다. "유사도 ≥ 0.62" 컷오프는 코드에서 `1 - distance ≥ 0.62` 로 환산해야 합니다. 이 환산을 빼먹으면 전부-hit 또는 전부-miss 가 되는데 원인 추적이 어렵습니다.
 
 > [!CAUTION]
 > **FT.SEARCH 는 hash 키만 인덱싱** — 인덱스 prefix 와 일치하는 Redis Hash 키만 인덱싱됩니다. 임베딩·답변·출처를 한 hash 키에 함께 저장합니다 (`hset`). 일반 `SET` 으로 저장한 값은 인덱싱되지 않아 항상 캐시 miss 가 됩니다.

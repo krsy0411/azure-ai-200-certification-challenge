@@ -20,6 +20,8 @@ _REDIS_AAD_SCOPE = "https://redis.azure.com/.default"
 def build_redis_client(settings: Settings) -> Redis:
     # 힌트: create_from_default_azure_credential((_REDIS_AAD_SCOPE,)) 로 credential_provider 를
     # 만들고, Redis(host=settings.redis_host, port=settings.redis_port, ssl=True,
-    # credential_provider=..., decode_responses=False) 를 반환합니다.
+    # credential_provider=..., decode_responses=False, protocol=2) 를 반환합니다.
     # decode_responses=False — 벡터를 raw float32 bytes 로 다루므로 디코딩은 사용처에서.
+    # protocol=2 — Azure Managed Redis 는 redis-py 8.x 와 RESP3 로 협상하는데 고수준
+    #   ft().search() 파서가 RESP3 를 못 다뤄 캐시가 항상 miss 한다. RESP2 로 고정한다.
     raise NotImplementedError("build_redis_client 를 구현하세요.")

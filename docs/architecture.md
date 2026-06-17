@@ -113,7 +113,7 @@ flowchart LR
 
   Api["ca-api<br/>FastAPI"] -- "3. 시맨틱 캐시 조회<br/>(embedding KNN)" --> Redis[("Managed Redis<br/>RediSearch")]
 
-  Redis -- "4a. cache hit<br/>(cosine ≥ 0.92)" --> Api
+  Redis -- "4a. cache hit<br/>(cosine ≥ 0.62)" --> Api
   Redis -. "4b. cache miss" .-> Api
 
   Api -- "5. 질문 임베드<br/>(text-embedding-3-large)" --> AOAI["Azure OpenAI"]

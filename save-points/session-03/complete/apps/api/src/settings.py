@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     redis_port: int = 10000
     # cosine 유사도 컷오프 — 이 값 이상이면 캐시 hit. RediSearch 는 distance(0~2)를
     # 반환하므로 코드에서 similarity = 1 - distance 로 환산해 비교한다.
-    cache_similarity_threshold: float = 0.92
+    cache_similarity_threshold: float = 0.62
     cache_ttl_seconds: int = 86400  # 24h
     cache_vector_dim: int = 3072  # text-embedding-3-large
 
