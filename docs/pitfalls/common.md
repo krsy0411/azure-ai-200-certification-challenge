@@ -45,6 +45,33 @@
 - 원인 — RBAC-only Key Vault 는 본인에게도 명시적으로 `Key Vault Secrets User` 등의 역할이 부여되어 있어야 함
 - 회피 — 본인에게 임시 부여하거나 CLI (`az keyvault secret list`) 사용
 
+### `az account get-access-token` 은 `--resource` (not `--resource-url`) (session-02)
+
+- 증상 — Entra 토큰으로 `psql` 접속 시 토큰 발급 명령이 `ERROR: unrecognized arguments: --resource-url https://ossrdbms-aad.database.windows.net` 으로 실패
+- 원인 — `az account get-access-token` 은 `--resource-url` 이 아니라 `--resource` 인자를 받음
+- 회피 — `--resource https://ossrdbms-aad.database.windows.net` 으로 호출
+
+  ```bash
+  PGPASSWORD=$(az account get-access-token \
+    --resource https://ossrdbms-aad.database.windows.net \
+    --query accessToken -o tsv)
+  ```
+
+### PostgreSQL Entra 전용 인증 — psql 접속 3대 전제 (session-02)
+
+- 증상 — `psql` 접속이 거부 (FATAL) 되거나 timeout 으로 멈추거나 인증에 실패. PostgreSQL Flexible Server 가 Entra ID 전용 인증 (`passwordAuth` 비활성) 이라 비밀번호 접속이 아예 불가
+- 원인 — 다음 세 전제 중 하나라도 어긋남
+  - **Entra 관리자 = `userObjectId`** — 배포 명령에 `userObjectId` 를 넘기지 않으면 관리자 부여 모듈이 `if (!empty(userObjectId))` 조건으로 건너뛰어, 본인이 관리자로 등록되지 않아 접속 거부
+  - **firewall = 본인 IP** — 배포 후 네트워크가 바뀌어 (다른 Wi-Fi · VPN 등) IP 가 달라지면 firewall 에 막혀 timeout
+  - **1시간 토큰** — `az account get-access-token` 으로 받은 Entra ID 토큰은 약 1시간 후 만료. 만료된 토큰을 `PGPASSWORD` 로 쓰면 인증 실패
+- 회피 — 배포 시 `userObjectId=$OID` 를 전달, IP 가 바뀌면 `az postgres flexible-server firewall-rule create` 로 추가하거나 `devClientIpAddress` 를 갱신해 재배포, 토큰은 만료 전 재발급 후 재접속
+
+  ```bash
+  PGPASSWORD=$(az account get-access-token \
+    --resource https://ossrdbms-aad.database.windows.net \
+    --query accessToken -o tsv)
+  ```
+
 ---
 
 ## Bicep · IaC
@@ -66,6 +93,32 @@
 - 증상 — `Conflict — Another operation is in progress`
 - 원인 — 같은 Azure OpenAI 계정에 두 개의 모델 deployment 를 동시에 생성하려 함
 - 회피 — Bicep `dependsOn: [aoaiChatDeployment]` 로 두 번째 deployment 가 순차적으로 실행되도록 지정
+
+### 모델 deprecation — 신규 deployment 생성 차단 (session-00)
+
+- 증상 — `az deployment sub what-if` preflight 에서 `ServiceModelDeprecated` 오류. 실측 사례 — `gpt-4o-mini` (version `2024-07-18`) 가 2026-03-31 부로 신규 deployment 생성 차단 (기존 deployment 의 추론은 2026-10-01 까지 동작하지만 새로 만들 수 없음)
+- 원인 — Azure OpenAI 모델은 버전별 수명 주기 (deprecation 일정) 가 있어, 신규 deployment 생성 차단일이 지나면 같은 Bicep 이라도 재배포가 실패함
+- 회피 — 현재 배포 가능한 모델을 확인하고 후속 모델로 교체. 본 워크샵은 `gpt-5-mini` (version `2025-08-07`) 로 교체함
+
+  ```bash
+  az cognitiveservices model list -l koreacentral \
+    --query "[?model.format=='OpenAI'].{name:model.name, version:model.version}" -o table
+  ```
+- 연계 함정 — 교체 모델의 SKU 지원 여부도 확인 필요. gpt-5 계열은 리전 `Standard` SKU 미지원으로 preflight 에서 `InvalidResourceProperties: The specified SKU 'Standard' of account deployment is not supported by the model 'gpt-5-mini'` 오류가 발생. deployment 의 `sku.name` 을 `GlobalStandard` 로 지정해야 함
+
+### Cosmos serverless 는 capability 가 아니라 `capacityMode` (session-01)
+
+- 증상 — `what-if` · 배포에서 `BadRequest: Capability EnableServerless is not allowed in API version beyond 2024-05-15-preview. Use CapacityMode instead`
+- 원인 — API 버전 `2024-05-15-preview` 이후로는 serverless 가 `capabilities` 배열의 `EnableServerless` 가 아니라 `properties.capacityMode: 'Serverless'` 로 지정
+- 회피 — `cosmos-account.bicep` 처럼 `properties.capacityMode` 사용
+
+  ```bicep
+  resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-12-01-preview' = {
+    properties: {
+      capacityMode: 'Serverless'
+    }
+  }
+  ```
 
 ### `subscription()` 과 `resourceGroup()` scope 혼동 (session-00)
 
@@ -133,6 +186,18 @@
   ```
 - 대안 — `az acr build` 로 클라우드에서 빌드 (Docker Desktop 불필요)
 
+### 자체 이미지가 ACR 에 없는 첫 배포는 `MANIFEST_UNKNOWN` 으로 실패 — placeholder 이미지 패턴 (session-01)
+
+- 증상 — Bicep 으로 Container App 을 처음 만들 때 아직 빌드 · push 하지 않은 자체 이미지 (예: `api:s01`) 를 참조하면 배포가 `ContainerAppOperationError: MANIFEST_UNKNOWN: manifest tagged by "s01" is not found` 로 실패하고 deployment 전체가 `Failed` 가 됨
+- 원인 — 자체 이미지는 빌드 · push 후에야 ACR 에 존재. IaC 가 그 이미지를 참조하는 시점에는 ACR 에 manifest 가 없음
+- 회피 — IaC 와 앱 배포를 분리하는 Azure Container Apps 권장 패턴 사용. Bicep 모듈에서 이미지 파라미터가 비면 public placeholder 이미지 (`mcr.microsoft.com/k8se/quickstart:latest`) 로 먼저 생성하고, 이미지 빌드 · push 후 `az containerapp update --image` 로 교체
+
+  ```bicep
+  var placeholderImage = 'mcr.microsoft.com/k8se/quickstart:latest'
+  var resolvedImage = empty(containerImage) ? placeholderImage : '${acrLoginServer}/${containerImage}'
+  ```
+- 함의 — placeholder 이미지는 본 워크샵이 지정한 포트 (8000 · 3000) 를 듣지 않으므로 첫 revision 이 `ActivationFailed` 로 표시될 수 있음. deployment 자체는 `Succeeded` 이고 `az containerapp update` 로 실제 이미지를 올리면 새 revision 이 `Healthy` 가 됨. 배포 실패로 오해하지 않음
+
 ### `az configure --defaults group=...` 잔여 효과 (session-01)
 
 - 증상 — `az acr login` 실패. 메시지가 인증 문제처럼 보이지만 실제 원인은 다름
@@ -161,6 +226,37 @@
 - 증상 — Azure Functions 가 시작 직후 stop 상태로 전환
 - 원인 — Azure Functions 호스트가 Storage account 에 SharedKey 로 접근하려는데 차단됨
 - 회피 — OAC (Object Access Control) + User Assigned Managed Identity 에 `Storage Blob Data Owner` + `Storage Queue Data Contributor` + `Storage Table Data Contributor` 역할 부여
+
+### `aiohttp` 누락 시 비동기 인증 ImportError 로 부팅 실패 (session-01)
+
+- 증상 — 컨테이너가 시작 직후 죽음. 로그에 `ImportError: aiohttp package is not installed. Use pip install aiohttp to install it.`
+- 원인 — `azure.identity.aio.DefaultAzureCredential` (async credential) 이 async HTTP transport 로 `aiohttp` 를 요구. `pyproject.toml` 에 명시하지 않으면 이미지에 포함되지 않음
+- 회피 — `pyproject.toml` 의존성에 `aiohttp>=3.10.0` 명시
+
+  ```toml
+  dependencies = [
+      "azure-identity>=1.19.0",
+      "aiohttp>=3.10.0",  # azure.identity.aio 의 async transport 가 요구
+  ]
+  ```
+
+---
+
+## Azure OpenAI · SDK
+
+### gpt-5 계열 reasoning 모델은 `max_tokens` · 커스텀 `temperature` 미지원 (session-01)
+
+- 증상 — chat completion 호출이 `BadRequest` 로 실패. 실측 에러 — `Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.`. `temperature` 를 1 이외 값으로 주면 별도 거부
+- 원인 — gpt-5 계열 reasoning 모델은 토큰 상한 파라미터를 `max_completion_tokens` 로 받고, `temperature` 는 기본값 (1) 만 허용
+- 회피 — `max_tokens` 대신 `max_completion_tokens` 사용, `temperature` 는 생략. reasoning 토큰이 출력 토큰과 함께 차감되므로 상한을 여유 있게 둠
+
+  ```python
+  response = await client.chat.completions.create(
+      model=settings.azure_openai_chat_deployment,
+      messages=messages,
+      max_completion_tokens=2048,  # max_tokens 아님. temperature 는 생략 (기본 1)
+  )
+  ```
 
 ---
 
@@ -194,6 +290,16 @@
 - 증상 — 앱 시작 시 PoolTimeout (30s) 후 dead
 - 원인 — 풀 초기화 콜백에서 `register_vector_async` 호출. DB 에 vector extension 이 없으면 실패하고 풀 초기화 자체가 실패
 - 회피 — 부트스트랩 스크립트로 `CREATE EXTENSION vector` 를 먼저 실행하고, 그 다음 앱을 시작
+
+### PostgreSQL `SET LOCAL` 은 파라미터 바인딩 불가 (session-02)
+
+- 증상 — `hnsw.ef_search` 등을 `SET LOCAL hnsw.ef_search = %s` 로 바인딩하면 `psycopg.errors.SyntaxError: syntax error at or near "$1"` 으로 실패
+- 원인 — PostgreSQL 의 `SET` / `SET LOCAL` 명령은 prepared statement 파라미터 (`$1`) 를 지원하지 않음. psycopg 가 `%s` 를 `$1` 로 변환해 보내면서 구문 오류 발생
+- 회피 — 값을 직접 삽입. 정수형 값은 `int()` 로 캐스팅해 SQL injection 을 막고 f-string 으로 삽입
+
+  ```python
+  await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")
+  ```
 
 ### RediSearch TAG 필드의 하이픈 escape 누락 (session-03)
 
@@ -256,6 +362,45 @@
 
 ---
 
+## OpenTelemetry · 관찰 가능성
+
+### `configure_azure_monitor` 는 FastAPI app 생성 전에 호출 (session-01·session-06)
+
+- 증상 — 트래픽은 200 OK 인데 Application Insights `requests` 테이블이 0 건. 메트릭만 기록되고 요청 span 이 전혀 잡히지 않음
+- 원인 — `configure_azure_monitor` 를 `lifespan` (= `app = FastAPI()` 생성 후) 에서 호출. FastAPI 자동 계측은 `FastAPI.__init__` 을 패치하는 방식이라, 이미 만들어진 app 인스턴스에는 적용되지 않음
+- 회피 — 계측을 import 최상단 (app 생성 전) 에서 활성화
+
+  ```python
+  import os
+
+  from azure.monitor.opentelemetry import configure_azure_monitor
+
+  if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+      configure_azure_monitor()
+
+  from fastapi import FastAPI  # noqa: E402
+
+  app = FastAPI()  # 계측이 이미 켜진 뒤에 생성
+  ```
+
+### `azure-monitor-opentelemetry` 는 httpx · aiohttp 를 자동 계측하지 않음 (session-01)
+
+- 증상 — FastAPI 요청 span 은 잡히는데, Azure OpenAI · Cosmos 호출이 dependency span 으로 남지 않아 Transaction search 의 span 트리가 비어 보임
+- 원인 — `azure-monitor-opentelemetry` 는 FastAPI · requests · urllib 등은 자동 계측하지만 httpx · aiohttp 는 자동 활성화하지 않음. Azure OpenAI (httpx) · Cosmos (aiohttp) 호출이 누락됨
+- 회피 — instrumentation 패키지를 의존성에 추가하고 명시적으로 instrument
+
+  ```python
+  from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+  from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+  HTTPXClientInstrumentor().instrument()
+  AioHttpClientInstrumentor().instrument()
+  ```
+
+  `pyproject.toml` 에 `opentelemetry-instrumentation-httpx` · `opentelemetry-instrumentation-aiohttp-client` 를 추가
+
+---
+
 ## Azure Kubernetes Service
 
 ### Custom kubelet identity 사용 시 control plane 도 UserAssigned 강제 (session-07)
@@ -302,6 +447,20 @@
 - 증상 — Resource Group 삭제 후 재배포 시 Azure Container Registry 가 남아 이미지 history 가 보존됨. 좋은 동작이지만 학습자가 인지하지 못할 수 있음
 - 원인 — Azure Container Registry 보존이 [CLAUDE.md](../../CLAUDE.md) 의 자원 라이프사이클 원칙. 학습 자산으로 의도된 보존
 - 회피 — 의식적으로 Azure Container Registry 는 후속 진행에서도 재사용 가능하다는 점을 인지
+
+---
+
+## 로컬 도구
+
+### macOS 에서 Python 이 `SSLCertVerificationError` — certifi CA 번들 지정 (session-01)
+
+- 증상 — macOS 에서 로컬 스크립트 (예: Cosmos 시드) 실행 시 `azure.core.exceptions.ServiceRequestError: ... SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate`. `az` CLI 는 정상인데 Python 의 `aiohttp` 만 실패
+- 원인 — macOS 의 Python 이 시스템 CA 번들을 찾지 못해 Azure 엔드포인트의 인증서 체인을 검증하지 못함
+- 회피 — `certifi` 가 제공하는 CA 번들 경로를 `SSL_CERT_FILE` 환경변수에 지정한 뒤 재실행
+
+  ```bash
+  export SSL_CERT_FILE=$(uv run --project apps/api python -c "import certifi; print(certifi.where())")
+  ```
 
 ---
 

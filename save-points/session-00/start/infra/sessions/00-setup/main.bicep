@@ -39,9 +39,9 @@ param userObjectId string = ''
 // -------- AOAI 모델 파라미터 ---------------------------------------------------
 
 @description('chat 모델 deployment 이름 (코드에서 부르는 이름)')
-param chatDeploymentName string = 'gpt-4o-mini'
-param chatModelName string = 'gpt-4o-mini'
-param chatModelVersion string = '2024-07-18'
+param chatDeploymentName string = 'gpt-5-mini'
+param chatModelName string = 'gpt-5-mini'
+param chatModelVersion string = '2025-08-07'
 @minValue(1)
 param chatCapacityK int = 10
 
@@ -98,6 +98,8 @@ var aoaiName = take('aoai-${projectId}-${env}-${uniqueString(subscription().id, 
 // 힌트: aoai-deployment.bicep 를 두 번 호출합니다 (chat → embed).
 // 같은 AOAI account 에 동시 PUT 하면 409 Conflict 가 나므로,
 // embed 모듈의 dependsOn 에 chat 모듈을 명시해 순차 실행되게 합니다.
+// 주의: gpt-5 계열은 리전 'Standard' SKU 를 지원하지 않으므로
+// chat 모듈에는 skuName: 'GlobalStandard' 를 전달해야 합니다 (embed 는 기본값 그대로).
 
 // -------- 7) 역할 할당 — User Assigned Managed Identity 에 Cognitive Services OpenAI User 부여 ---
 // 힌트: role-assignment-aoai-user.bicep 를 호출합니다.

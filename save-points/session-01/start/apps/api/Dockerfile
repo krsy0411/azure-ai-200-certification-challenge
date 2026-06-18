@@ -37,8 +37,8 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels \
     ai200-workshop-api && \
     rm -rf /wheels
 
-# OpenTelemetry 자동 계측 환경변수 — Azure Container Apps 가 환경변수로 추가 주입.
-# OTEL_TRACES_SAMPLER 는 Bicep 의 envVars 에서 always_on 으로 주입됨.
+# OpenTelemetry 자동 계측 환경변수 (APPLICATIONINSIGHTS_CONNECTION_STRING 등) 는
+# Azure Container Apps 가 envVars 로 주입한다.
 
 EXPOSE 8000
 

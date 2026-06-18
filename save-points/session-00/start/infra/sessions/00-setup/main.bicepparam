@@ -14,9 +14,9 @@ param location = 'koreacentral'
 param aoaiLocation = 'koreacentral'
 
 // AOAI 모델 — chat
-param chatDeploymentName = 'gpt-4o-mini'
-param chatModelName = 'gpt-4o-mini'
-param chatModelVersion = '2024-07-18'
+param chatDeploymentName = 'gpt-5-mini'
+param chatModelName = 'gpt-5-mini'
+param chatModelVersion = '2025-08-07'
 param chatCapacityK = 10  // = 10K TPM. 쿼터 부족 시 낮춤.
 
 // AOAI 모델 — embedding

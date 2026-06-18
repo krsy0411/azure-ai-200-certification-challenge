@@ -43,6 +43,10 @@ dependencies = [
     # FastAPI 인입 요청 계측 — distro 에 포함되나, app 인스턴스를 명시 계측(instrument_app)
     # 하려면 직접 import 하므로 명시 의존성으로 선언한다.
     "opentelemetry-instrumentation-fastapi>=0.48b0",
+    # azure-monitor 가 자동 활성화하지 않는 async HTTP 클라이언트 계측 — Azure OpenAI(httpx),
+    # Cosmos(aiohttp) 호출을 dependency span 으로 남기려면 명시적으로 추가해야 한다.
+    "opentelemetry-instrumentation-httpx",
+    "opentelemetry-instrumentation-aiohttp-client",
 ]
 
 [dependency-groups]

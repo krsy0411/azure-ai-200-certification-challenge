@@ -96,6 +96,13 @@ if _obs_settings.applicationinsights_connection_string:
         connection_string=_obs_settings.applicationinsights_connection_string,
     )
     FastAPIInstrumentor.instrument_app(app)
+    # azure-monitor 가 자동 활성화하지 않는 async HTTP 클라이언트 계측 — Azure OpenAI(httpx)
+    # · Cosmos(aiohttp) 호출을 dependency span 으로 남기려면 명시적으로 켠다.
+    from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+    HTTPXClientInstrumentor().instrument()
+    AioHttpClientInstrumentor().instrument()
 
 
 @app.get("/healthz")

@@ -92,9 +92,7 @@ class PgVectorStore:
             # SET LOCAL 은 트랜잭션 안에서만 유효 — 풀로 반환된 연결에 설정이 새지 않는다.
             async with conn.transaction():
                 if ef_search is not None:
-                    # SET 은 bind 파라미터($1)를 받지 않는다 (syntax error at or near "$1").
-                    # ef_search 는 신뢰된 정수라 직접 보간.
-                    await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")
+                    await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")  # SET LOCAL 은 파라미터 바인딩 불가 — int 직접 삽입
                 cur = await conn.execute(_SEARCH_SQL, (HalfVector(query_embedding), top_k))
                 rows = await cur.fetchall()
 

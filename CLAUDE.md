@@ -75,7 +75,7 @@
 
 - Backend: Python 3.12, FastAPI, uvicorn, Pydantic v2
 - Frontend: Next.js 14+ (App Router), TypeScript
-- LLM: Azure OpenAI (gpt-4o-mini + text-embedding-3-large)
+- LLM: Azure OpenAI (gpt-5-mini + text-embedding-3-large)
 - Data: Cosmos DB for NoSQL, PostgreSQL Flexible Server(pgvector), Azure Managed Redis
 - Hosting: ACA(메인) + AKS(보조 워커) + ACR
 - Async: Service Bus, Event Grid, Azure Functions

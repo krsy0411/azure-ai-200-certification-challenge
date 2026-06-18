@@ -7,7 +7,7 @@ metadata:
   namespace: default
 data:
   AZURE_OPENAI_ENDPOINT: "__AOAI_ENDPOINT__"
-  AZURE_OPENAI_CHAT_DEPLOYMENT: "gpt-4o-mini"
+  AZURE_OPENAI_CHAT_DEPLOYMENT: "gpt-5-mini"
   AZURE_OPENAI_EMBED_DEPLOYMENT: "text-embedding-3-large"
   AZURE_OPENAI_API_VERSION: "2024-08-01-preview"
   COSMOS_ENDPOINT: "__COSMOS_ENDPOINT__"

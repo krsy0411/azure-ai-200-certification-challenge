@@ -29,13 +29,13 @@
   - `psql` — Entra ID 토큰을 비밀번호로 사용
   - `psycopg` async + `psycopg_pool` — 클라이언트 측 연결 풀
   - `pgvector.psycopg.register_vector_async` — Python ↔ `halfvec` 타입 매핑
-- **Portal 에서 확인할 지표 / 데이터**
-  - PostgreSQL Flexible Server → Server parameters — `azure.extensions` 가 `VECTOR` 포함
-  - PostgreSQL Flexible Server → Metrics — seed 직후 CPU · 활성 연결 수 스파이크
-  - PostgreSQL Flexible Server → Query performance insight — HNSW 검색 쿼리 plan
+- **확인할 지표 / 데이터**
+  - PostgreSQL Flexible Server → Server parameters (Portal) — `azure.extensions` 가 `VECTOR` 포함
+  - PostgreSQL Flexible Server → Metrics (Portal) — seed 직후 CPU · 활성 연결 수 스파이크
+  - psql `EXPLAIN ANALYZE` — 벡터 검색 실행 계획 (인덱스 사용 여부)
 
 > [!TIP]
-> 이 세션은 `Bicep 모듈 조립 → 배포 → 데이터 초기화 → 코드 채우기 → 비교 측정 → Portal 확인` 흐름으로 진행합니다.
+> 이 세션은 `Bicep 모듈 조립 → 배포 → 데이터 초기화 → 코드 채우기 → 비교 측정 → Portal · psql 확인` 흐름으로 진행합니다.
 
 ---
 
@@ -271,10 +271,13 @@ Entra ID 토큰을 비밀번호로 사용해 `psql` 로 접속합니다. ([1.11]
 
 ```bash
 PGPASSWORD=$(az account get-access-token \
-  --resource-url https://ossrdbms-aad.database.windows.net \
+  --resource https://ossrdbms-aad.database.windows.net \
   --query accessToken -o tsv) \
 psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require"
 ```
+
+> [!WARNING]
+> `az account get-access-token` 은 `--resource-url` 이 아니라 **`--resource`** 인자를 받습니다. `--resource-url` 로 적으면 `ERROR: unrecognized arguments: --resource-url https://ossrdbms-aad.database.windows.net` 으로 실패합니다.
 
 접속한 `psql` 안에서 다음 SQL 을 그대로 복사해 실행합니다.
 
@@ -338,10 +341,10 @@ CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks (doc_id);
 
         sources: list[Source] = []
         async with self._pool.connection() as conn:
+            # SET LOCAL 은 트랜잭션 안에서만 유효 — 풀로 반환된 연결에 설정이 새지 않는다.
             async with conn.transaction():
                 if ef_search is not None:
-                    # SET 은 bind 파라미터($1)를 받지 않는다. ef_search 는 신뢰된 정수라 직접 보간.
-                    await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")
+                    await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")  # SET LOCAL 은 파라미터 바인딩 불가 — int 직접 삽입
                 cur = await conn.execute(_SEARCH_SQL, (HalfVector(query_embedding), top_k))
                 rows = await cur.fetchall()
 
@@ -355,6 +358,9 @@ CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks (doc_id);
             )
         return sources
 ```
+
+> [!WARNING]
+> PostgreSQL 의 `SET` / `SET LOCAL` 명령은 prepared statement 파라미터 (`$1`) 를 지원하지 않습니다. `SET LOCAL hnsw.ef_search = %s` 처럼 바인딩하면 `psycopg.errors.SyntaxError: syntax error at or near "$1"` 으로 실패합니다. 위처럼 `int()` 로 캐스팅한 값을 f-string 으로 직접 삽입합니다 — `int()` 캐스팅이 SQL injection 을 막아줍니다.
 
 `fetch_content` 와 `close` 를 마저 채웁니다.
 
@@ -379,6 +385,9 @@ CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks (doc_id);
 
 `scripts/seed_both.py` 의 `_load_cosmos` · `_search_cosmos` · `_load_pg` · `_search_pg` 함수가 비어 있습니다. 완성본 (`save-points/session-02/complete/scripts/seed_both.py`) 의 본체를 채운 뒤 실행합니다.
 
+> [!NOTE]
+> `_search_pg` 도 [2.3](#23-postgresql-스토어-구현) 의 `vector_search` 와 같은 방식으로 `hnsw.ef_search` 를 설정합니다. `SET LOCAL` 은 파라미터 바인딩을 지원하지 않으므로 (`syntax error at or near "$1"`), `int()` 로 캐스팅한 값을 f-string 으로 직접 삽입한 완성본을 그대로 사용합니다.
+
 ```bash
 # apps/api 의 의존성 환경으로 실행 (psycopg · pgvector · azure-cosmos 포함)
 uv run --project apps/api python scripts/seed_both.py
@@ -400,24 +409,58 @@ uv run --project apps/api python scripts/seed_both.py
 
 ---
 
-## 3단계 · Azure Portal UI 에서 확인
+## 3단계 · Azure Portal · psql 로 확인
 
-[Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
+1·2 는 [Azure Portal](https://portal.azure.com) 에서, 3 은 psql 터미널에서 확인합니다.
 
 1. **PostgreSQL Flexible Server** → **Server parameters** → 검색창에 `azure.extensions` 입력 → 값에 `VECTOR` 가 포함되어 있는지 확인
+
+   <!-- 📸 capture: images/session-02/3a-postgres-server-parameters-azure-extensions.png -->
+   <!--
+   ![PostgreSQL Flexible Server 의 Server parameters 에서 azure.extensions 값을 보여 주는 Azure Portal 스크린샷](../../images/session-02/3a-postgres-server-parameters-azure-extensions.png)
+
+   `azure.extensions` 파라미터의 **VALUE** 에 `VECTOR` 가 포함되어 있는지 확인합니다. 이 allowlist 에 없으면 `CREATE EXTENSION vector` 가 실패합니다.
+   -->
+
 2. **PostgreSQL Flexible Server** → **Metrics** → 두 메트릭 추가
    - `CPU percent` — seed 실행 직후 스파이크
    - `Active Connections` — 풀 크기 만큼 일시적으로 증가
-3. **PostgreSQL Flexible Server** → **Query performance insight** (또는 **Server logs**) → 가장 비싼 쿼리 상위에 `SELECT ... ORDER BY embedding <=> ...` 가 노출
-4. (선택) `psql` 안에서 `EXPLAIN ANALYZE` 실행
+
+   <!-- 📸 capture: images/session-02/3b-postgres-metrics-cpu-active-connections.png -->
+   <!--
+   ![PostgreSQL Flexible Server 의 CPU percent 와 Active Connections 메트릭 차트를 보여 주는 Azure Portal 스크린샷](../../images/session-02/3b-postgres-metrics-cpu-active-connections.png)
+
+   seed 실행 직후 `CPU percent` 가 스파이크를 그리는지, `Active Connections` 가 연결 풀 크기만큼 일시적으로 증가했다가 내려오는지 확인합니다.
+   -->
+
+3. psql 터미널에서 `EXPLAIN ANALYZE` 로 벡터 검색 실행 계획 확인
+
+   `EXPLAIN ANALYZE` 는 Azure Portal 의 기능이 아니라 PostgreSQL 의 SQL 명령어로, 쿼리가 실제로 어떤 실행 계획을 거쳤는지 보여줍니다. [2.2](#22-postgresql-데이터베이스-초기화) 에서 접속한 psql 세션을 그대로 사용하거나, 같은 방식으로 다시 접속해 다음 쿼리를 복사·실행합니다. `chunks` 의 첫 행을 기준 벡터로 삼아 자기 자신을 검색하므로 별도 파라미터 없이 그대로 동작합니다.
 
    ```sql
    EXPLAIN ANALYZE
-   SELECT id, title, embedding <=> $1::halfvec AS distance
+   SELECT id, title, embedding <=> (SELECT embedding FROM chunks LIMIT 1) AS distance
    FROM chunks ORDER BY distance LIMIT 5;
    ```
 
-   plan 에 `Index Scan using chunks_embedding_hnsw` 가 보이면 인덱스가 사용된 것입니다. `Seq Scan` 이 나오면 데이터가 작아 플래너가 순차 스캔을 고른 것으로, [주의](#주의) 섹션을 참고합니다.
+   다음과 비슷한 출력이 표시됩니다.
+
+   ```
+                                                           QUERY PLAN
+   --------------------------------------------------------------------------------------------------------------------------
+    Limit  (cost=10.56..10.57 rows=5 width=86) (actual time=2.444..2.447 rows=5 loops=1)
+      InitPlan 1 (returns $0)
+        ->  Limit  (cost=0.00..0.07 rows=1 width=18) (actual time=0.009..0.010 rows=1 loops=1)
+              ->  Seq Scan on chunks chunks_1  (cost=0.00..8.20 rows=120 width=18) ...
+      ->  Sort  (cost=10.49..10.79 rows=120 width=86) (actual time=2.442..2.443 rows=5 loops=1)
+            Sort Key: ((chunks.embedding <=> $0))
+            Sort Method: top-N heapsort  Memory: 25kB
+            ->  Seq Scan on chunks  (cost=0.00..8.50 rows=120 width=86) (actual time=0.179..2.330 rows=120 loops=1)
+    Planning Time: 2.043 ms
+    Execution Time: 2.576 ms
+   ```
+
+   실행 계획에 `Seq Scan on chunks` 가 보이는데, 이는 본 워크샵 데이터가 120 건으로 작아 플래너가 HNSW 인덱스 대신 순차 스캔 (정확 검색) 을 고른 것이며 정상입니다 ([주의](#주의) 섹션 · [2.4](#24-비교-실행) 의 TIP 참고). 데이터가 커지거나 같은 세션에서 `SET LOCAL enable_seqscan = off` 로 순차 스캔을 강제하면 `Index Scan using chunks_embedding_hnsw` 가 실행 계획에 나타납니다.
 
 ---
 
@@ -452,6 +495,12 @@ uv run --project apps/api python scripts/seed_both.py
 
 > [!NOTE]
 > **서버 이름 접미사** — PostgreSQL Flexible Server 이름은 글로벌 unique 라 `uniqueString` 접미사가 붙습니다. `az postgres flexible-server list` 로 실제 이름과 도메인을 조회해 사용합니다 ([1.11](#111-배포-완료-확인)).
+
+> [!WARNING]
+> **psql 접속이 막힐 때** — 다음을 확인합니다.
+> - `userObjectId` 를 배포 명령에 넘기지 않으면 본인이 Entra ID 관리자로 등록되지 않아 접속이 거부됩니다 ([1.3](#13-entra-id-관리자--배포-사용자) 의 관리자 부여가 `if (!empty(userObjectId))` 조건부). 배포 시 `userObjectId=$OID` 를 반드시 전달합니다
+> - 배포 후 네트워크가 바뀌어 IP 가 달라지면 (다른 Wi-Fi · VPN 등) firewall 에 막혀 접속이 timeout 됩니다. `az postgres flexible-server firewall-rule create` 로 새 IP 를 추가하거나 `devClientIpAddress` 를 갱신해 재배포합니다
+> - Entra ID 토큰은 약 1시간 후 만료됩니다. `PGPASSWORD` 를 `az account get-access-token --resource https://ossrdbms-aad.database.windows.net` 으로 재발급한 뒤 다시 접속합니다
 
 > [!TIP]
 > 진행 중 막혔다면 완성본 코드를 그대로 덮어쓰고 어디가 달랐는지 직접 비교할 수 있습니다.

@@ -34,9 +34,9 @@ param userObjectId string = ''
 // -------- AOAI 모델 파라미터 ---------------------------------------------------
 
 @description('chat 모델 deployment 이름 (코드에서 부르는 이름)')
-param chatDeploymentName string = 'gpt-4o-mini'
-param chatModelName string = 'gpt-4o-mini'
-param chatModelVersion string = '2024-07-18'
+param chatDeploymentName string = 'gpt-5-mini'
+param chatModelName string = 'gpt-5-mini'
+param chatModelVersion string = '2025-08-07'
 @minValue(1)
 param chatCapacityK int = 10
 
@@ -164,6 +164,8 @@ module aoaiChat '../../modules/session-00/aoai-deployment.bicep' = {
     modelName: chatModelName
     modelVersion: chatModelVersion
     capacity: chatCapacityK
+    // gpt-5 계열은 리전 'Standard' SKU 미지원 — GlobalStandard 필수
+    skuName: 'GlobalStandard'
   }
 }
 

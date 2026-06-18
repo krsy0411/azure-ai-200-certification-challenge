@@ -4,10 +4,10 @@ param accountName string
 @description('Deployment name (학습자가 코드에서 부르는 이름)')
 param deploymentName string
 
-@description('Model name (e.g. gpt-4o-mini, text-embedding-3-large)')
+@description('Model name (e.g. gpt-5-mini, text-embedding-3-large)')
 param modelName string
 
-@description('Model version (e.g. 2024-07-18 for gpt-4o-mini, 1 for text-embedding-3-large)')
+@description('Model version (e.g. 2025-08-07 for gpt-5-mini, 1 for text-embedding-3-large)')
 param modelVersion string
 
 @description('Model format')

@@ -51,7 +51,7 @@ async def chat_with_context(
     question: str,
     context: str,
 ) -> str:
-    """검색된 chunk 컨텍스트와 질문을 받아 `gpt-4o-mini` 로 답변 생성.
+    """검색된 chunk 컨텍스트와 질문을 받아 `gpt-5-mini` 로 답변 생성.
 
     프롬프트 전략 — 시스템 메시지로 RAG 규칙을 고정하고, 사용자 메시지에
     `context` 와 `question` 을 분리해 전달한다. 학습용 단순 형태로, 본격 운영

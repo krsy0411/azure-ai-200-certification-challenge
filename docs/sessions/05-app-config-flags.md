@@ -316,9 +316,41 @@ time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/js
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
 1. **App Configuration** → **Configuration explorer** — `aoai:endpoint` 등 키 목록 + Key Vault reference 키(`secrets:aoai-endpoint`)는 타입이 `Key vault reference`
+
+   <!-- 📸 capture: images/session-05/3a-app-config-configuration-explorer.png -->
+   <!--
+   ![Configuration explorer 의 키/값 목록을 보여 주는 Azure Portal 스크린샷](../../images/session-05/3a-app-config-configuration-explorer.png)
+
+   `aoai:endpoint` · `cosmos:endpoint` · `pg:host` · `redis:host` 키 4개와 `sentinel` 이 나열되고, `secrets:aoai-endpoint` 의 타입이 **Key vault reference** 로 표시되는지 확인합니다.
+   -->
+
 2. **App Configuration** → **Feature manager** — `enable_semantic_cache` 토글. **포털에서 직접 토글** 후 30~60초 안에 동작이 바뀌는지 확인
+
+   <!-- 📸 capture: images/session-05/3b-app-config-feature-manager-toggle.png -->
+   <!--
+   ![Feature manager 의 enable_semantic_cache 피처 플래그 토글을 보여 주는 Azure Portal 스크린샷](../../images/session-05/3b-app-config-feature-manager-toggle.png)
+
+   `enable_semantic_cache` 와 `enable_pg_backend` 플래그 2개가 나열되는지 확인합니다. 토글을 끄면 폴링 주기 (30~60초) 안에 API 의 캐시 동작이 바뀝니다.
+   -->
+
 3. **Application Insights** → **Live Metrics** — 토글 OFF 후 1분 안에 `cache.lookup` 의 hit 가 사라지는 모습 실시간 관측
+
+   <!-- 📸 capture: images/session-05/3c-app-insights-live-metrics-cache-off.png -->
+   <!--
+   ![토글을 끈 직후의 실시간 요청 흐름을 보여 주는 Application Insights Live Metrics 의 Azure Portal 스크린샷](../../images/session-05/3c-app-insights-live-metrics-cache-off.png)
+
+   토글 OFF 후 1분 안에 `cache.lookup` 의 hit 가 더 이상 나타나지 않는지 실시간으로 확인합니다.
+   -->
+
 4. **Key Vault** → **Secrets** — App Configuration 이 reference 하는 secret 이름은 노출, 실제 값은 권한이 있어야 조회
+
+   <!-- 📸 capture: images/session-05/3d-key-vault-secrets-list.png -->
+   <!--
+   ![Key Vault 의 Secrets 목록에 aoai-endpoint 가 나열된 모습을 보여 주는 Azure Portal 스크린샷](../../images/session-05/3d-key-vault-secrets-list.png)
+
+   App Configuration 이 reference 하는 secret `aoai-endpoint` 의 이름이 목록에 노출되는지 확인합니다. 실제 값은 **Key Vault Secrets User** 같은 데이터 권한이 있어야 조회됩니다.
+   -->
+
 5. (선택) **Application Insights** → **Logs** 에서 다음 KQL 실행
 
    ```kusto
@@ -331,6 +363,13 @@ time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/js
    ```
 
    토글 OFF 직후 `hit_rate` 가 0 으로 내려가는 시점이 시각화됩니다.
+
+   <!-- 📸 capture: images/session-05/3e-app-insights-hit-rate-timechart.png -->
+   <!--
+   ![cache.lookup 의 hit_rate 추이를 시간 축 차트로 보여 주는 Application Insights Logs 의 Azure Portal 스크린샷](../../images/session-05/3e-app-insights-hit-rate-timechart.png)
+
+   토글 OFF 직후 `hit_rate` 가 0 으로 내려가는 시점이 차트에 나타나는지 확인합니다.
+   -->
 
 ---
 

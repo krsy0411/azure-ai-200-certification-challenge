@@ -4,7 +4,7 @@ session-01 의 RAG MVP 는 다음 3 단계로 동작한다.
 
 1. **embed** — 사용자 질문을 `text-embedding-3-large` 로 임베딩
 2. **retrieve** — Cosmos DB 벡터 검색으로 가장 가까운 chunk top-k 를 가져옴
-3. **generate** — 검색된 chunk 의 본문을 컨텍스트로 묶어 `gpt-4o-mini` 에 전달, 답변 생성
+3. **generate** — 검색된 chunk 의 본문을 컨텍스트로 묶어 `gpt-5-mini` 에 전달, 답변 생성
 
 검색 백엔드는 `VectorStore` Protocol 로 추상화되어 있어, session-02 에서
 `STORE_BACKEND` 환경변수로 Cosmos DB / PostgreSQL pgvector 를 전환할 수 있다.
@@ -66,7 +66,7 @@ async def run_rag_chain(
             contents.append(f"## {heading}\n{content}")
     context = "\n\n".join(contents)
 
-    # 3) generate — gpt-4o-mini 가 컨텍스트 기반 답변 생성
+    # 3) generate — gpt-5-mini 가 컨텍스트 기반 답변 생성
     answer = await chat_with_context(aoai_client, settings, question, context)
     response = ChatResponse(answer=answer, sources=sources)
 

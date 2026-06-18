@@ -27,7 +27,6 @@ import asyncio
 import math
 import os
 import statistics
-import sys
 import time
 
 import psycopg
@@ -64,7 +63,7 @@ def _build_corpus() -> list[tuple[str, str, str]]:
         "복지": ["식대 지원", "건강검진 안내", "동호회 지원금", "교육비 환급", "경조금 지급"],
         "장비": ["모니터 추가 신청", "소프트웨어 라이선스", "사내 와이파이", "회의실 예약", "프린터 사용"],
     }
-    regions = ["본사", "판교 지사", "부산 지사", "원격"]
+    regions = ["본사", "판교 지사", "부산 지사", "대전 지사", "원격"]
     corpus: list[tuple[str, str, str]] = []
     for cat, items in categories.items():
         for item in items:
@@ -207,8 +206,7 @@ async def _search_pg(
     async with await psycopg.AsyncConnection.connect(_pg_conninfo(token)) as conn:
         await register_vector_async(conn)
         async with conn.transaction():
-            # SET 은 bind 파라미터($1)를 받지 않는다. ef_search 는 신뢰된 정수라 직접 보간.
-            await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")
+            await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")  # SET LOCAL 은 파라미터 바인딩 불가 — int 직접 삽입
             cur = await conn.execute(
                 "SELECT doc_id, embedding <=> %s AS d FROM chunks ORDER BY d LIMIT %s",
                 (HalfVector(query_emb), TOP_K),
@@ -283,9 +281,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    # Windows 기본 ProactorEventLoop 는 psycopg async 와 호환되지 않는다 → SelectorEventLoop 강제.
-    # (set_event_loop_policy 는 3.14 에서 deprecated → asyncio.run 의 loop_factory 사용, 3.12+)
-    if sys.platform == "win32":
-        asyncio.run(main(), loop_factory=asyncio.SelectorEventLoop)
-    else:
-        asyncio.run(main())
+    asyncio.run(main())

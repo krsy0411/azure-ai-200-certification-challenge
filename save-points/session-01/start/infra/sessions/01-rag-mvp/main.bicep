@@ -37,10 +37,10 @@ param location string = resourceGroup().location
 param userObjectId string = ''
 
 @description('FastAPI 이미지 태그 (예: s01, latest)')
-param apiImageTag string = 's01'
+param apiImageTag string = ''
 
 @description('Next.js 이미지 태그')
-param webImageTag string = 's01'
+param webImageTag string = ''
 
 @description('Cosmos DB database 이름')
 param cosmosDatabaseName string = 'appdb'
@@ -132,7 +132,7 @@ var logAnalyticsSharedKey = law.listKeys().primarySharedKey
 // - containerImage = 'api:${apiImageTag}'
 // - envVars: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_CHAT_DEPLOYMENT, AZURE_OPENAI_EMBED_DEPLOYMENT,
 //            AZURE_OPENAI_API_VERSION, COSMOS_ENDPOINT, COSMOS_DATABASE, COSMOS_CHUNKS_CONTAINER,
-//            APPLICATIONINSIGHTS_CONNECTION_STRING, OTEL_TRACES_SAMPLER='always_on'
+//            APPLICATIONINSIGHTS_CONNECTION_STRING
 // - dependsOn 에 위 5)의 RBAC 모듈 3개 명시 (Container App 시작 전 RBAC 부여 완료 보장)
 
 // -------- 8) Azure Container Apps — Next.js (ca-web) 모듈 호출하기 ------------

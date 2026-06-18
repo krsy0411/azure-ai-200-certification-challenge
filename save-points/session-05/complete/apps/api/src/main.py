@@ -110,7 +110,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     1. 질문 임베딩
     2. 선택된 벡터 스토어 (Cosmos DB 또는 PostgreSQL pgvector) 로 chunk top-k 검색
-    3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-4o-mini 호출
+    3. 검색된 chunk 본문을 컨텍스트로 묶어 gpt-5-mini 호출
 
     시맨틱 캐시 사용 여부는 App Configuration 의 enable_semantic_cache 플래그로 매 요청
     평가한다 (포털 토글이 30~60초 안에 반영). App Configuration 이 없으면 시작 시 구성을 따른다.
