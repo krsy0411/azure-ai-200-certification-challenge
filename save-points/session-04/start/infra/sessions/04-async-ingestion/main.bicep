@@ -93,7 +93,9 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-12-01-preview' exist
 //       role-assignment-servicebus.bicep 로 systemTopic.outputs.principalId 에
 //       roleServiceBusDataSender 부여 → event-grid-subscription.bicep
 //       (serviceBusQueueId=resourceId('Microsoft.ServiceBus/namespaces/queues',
-//        serviceBus.outputs.name, 'ingest-queue'), dependsOn 에 queue·sender).
+//        serviceBus.outputs.name, 'ingest-queue'),
+//        subjectBeginsWith='/blobServices/default/containers/documents/' — documents 컨테이너만
+//        트리거(deployments 컨테이너 오염 방지), dependsOn 에 queue·sender).
 
 // -------- 4) 역할 할당 — UAMI → SB 수신 / Storage Blob·Queue 모듈 호출하기 -----
 // 힌트: role-assignment-servicebus.bicep (roleServiceBusDataReceiver) +

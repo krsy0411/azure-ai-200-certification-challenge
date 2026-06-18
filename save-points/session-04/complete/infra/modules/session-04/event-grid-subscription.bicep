@@ -7,6 +7,9 @@ param name string = 'to-service-bus'
 @description('대상 Service Bus 큐 자원 id')
 param serviceBusQueueId string
 
+@description('subject prefix 필터 — 지정 컨테이너 blob 만 트리거. 예: /blobServices/default/containers/documents/. 빈 값이면 전체.')
+param subjectBeginsWith string = ''
+
 resource systemTopic 'Microsoft.EventGrid/systemTopics@2024-06-01-preview' existing = {
   name: systemTopicName
 }
@@ -31,6 +34,9 @@ resource subscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2024-
       includedEventTypes: [
         'Microsoft.Storage.BlobCreated'
       ]
+      // documents 컨테이너 blob 만 인제스션. deployments 컨테이너(함수 배포 zip 의
+      // 임시 blob)까지 트리거하면 BlobNotFound 로 큐가 오염되므로 prefix 로 제한.
+      subjectBeginsWith: subjectBeginsWith
     }
     eventDeliverySchema: 'EventGridSchema'
     retryPolicy: {
