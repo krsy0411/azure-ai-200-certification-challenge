@@ -317,9 +317,11 @@ az deployment group create \
 FUNC=$(az functionapp list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 SB=$(az servicebus namespace list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 
-# Function App 이 Running + 신 스키마(functionAppConfig.runtime) 적용
-az functionapp show -n $FUNC -g rg-ai200ws-dev \
-  --query "{state:state, runtime:functionAppConfig.runtime}" -o jsonc
+# Function App 이 Running + 신 스키마(functionAppConfig.runtime) 적용.
+# Flex Consumption 은 az functionapp show 의 state/runtime 이 null 로 나오므로
+# az resource show 로 properties 를 직접 조회한다.
+az resource show -g rg-ai200ws-dev -n $FUNC --resource-type Microsoft.Web/sites \
+  --query "{state:properties.state, runtime:properties.functionAppConfig.runtime}" -o jsonc
 
 # 큐가 DLQ 정책과 함께 만들어졌는지
 az servicebus queue show -g rg-ai200ws-dev --namespace-name $SB --name ingest-queue \
@@ -500,14 +502,24 @@ az storage blob upload --account-name $STORAGE --container-name documents \
   --file /tmp/sample-policy.md --name policy/sample-policy.md --auth-mode login
 
 # 3) 약 30초 후 Cosmos 확인
+#    az 에는 Cosmos 데이터플레인 쿼리 명령이 없으므로 SDK 로 조회합니다.
 sleep 30
 COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
-az cosmosdb sql query --account-name $COSMOS --database-name appdb --container-name chunks \
-  --query-text "SELECT VALUE COUNT(1) FROM c WHERE c.doc_id = 'sample-policy'" \
-  --partition-key-value "sample-policy"
+pip install -q azure-cosmos azure-identity   # 로컬에 없으면 1회만
+COSMOS_ENDPOINT="https://${COSMOS}.documents.azure.com:443/" python - <<'PY'
+import os
+from azure.cosmos import CosmosClient
+from azure.identity import AzureCliCredential
+chunks = (CosmosClient(os.environ["COSMOS_ENDPOINT"], credential=AzureCliCredential())
+          .get_database_client("appdb").get_container_client("chunks"))
+n = list(chunks.query_items(
+    "SELECT VALUE COUNT(1) FROM c WHERE c.doc_id='sample-policy'",
+    partition_key="sample-policy"))[0]
+print("chunks(sample-policy) =", n)
+PY
 ```
 
-기대 — 0 이 아닌 정수 (청크 개수).
+기대 — `chunks(sample-policy) =` 뒤에 0 이 아닌 정수 (청크 개수).
 
 ```bash
 # 4) PostgreSQL 도 확인
@@ -515,7 +527,7 @@ PG_HOST=$(az postgres flexible-server list -g rg-ai200ws-dev --query "[0].fullyQ
 UPN=$(az ad signed-in-user show --query userPrincipalName -o tsv)
 
 PGPASSWORD=$(az account get-access-token \
-  --resource-url https://ossrdbms-aad.database.windows.net --query accessToken -o tsv) \
+  --resource https://ossrdbms-aad.database.windows.net --query accessToken -o tsv) \
 psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
   -c "SELECT COUNT(*) FROM chunks WHERE doc_id = 'sample-policy';"
 ```
@@ -527,17 +539,44 @@ psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
 1. **Service Bus** → 큐 `ingest-queue` → **Metrics** → `Active Messages` (업로드 직후 1 → 0), `Dead-lettered Messages` (0 유지)
-2. **Function App** → **Functions** → `on_ingest_message` → **Invocations** — 실행 1건 `Success`, duration 약 2~5초
-3. **Function App** → **Log stream** — `[on_ingest_message] processed sample-policy.md → N chunks`
+2. **Application Insights `ai-…`** → **Logs** — `on_ingest_message` 실행 성공 확인 (아래 [!NOTE] 의 KQL). Log stream 은 host 잡음이 많아 권장하지 않습니다
+3. **Function App** → **Functions** → `on_cosmos_change` → **Invocations** — change feed 실행 1건 `Success`
 4. **Event Grid System Topic** → **Metrics** — `Publish Events` · `Delivery Successes` 카운트 1 증가
-5. **Cosmos DB** → **Data Explorer** → `chunks` 에서 `SELECT * FROM c WHERE c.doc_id = 'sample-policy'`, `doc_stats` 에서 집계 카운트 확인
+5. **Cosmos DB** → **Data Explorer** → `chunks` 에서 `SELECT * FROM c WHERE c.doc_id = 'sample-policy'`, `doc_stats` 에서 집계 카운트 확인 (아래 [!NOTE] — 첫 문서는 `doc_stats` 에 안 보일 수 있음)
+
+> [!NOTE]
+> **`on_ingest_message` 의 Invocations(호출) 탭은 비어 보입니다** — Flex Consumption + Python 의 Service Bus 트리거 실행은 App Insights `requests` 텔레메트리를 만들지 않아 **Functions → `on_ingest_message` → Invocations** 탭에 실행이 표시되지 않습니다 (데이터는 정상 처리됨). 또한 **Log stream** 은 host 의 storage 리스 폴링·토큰 로그가 많아 함수 로그가 묻힙니다. 실행 성공은 **Application Insights `ai-…` → Logs** 에서 아래 KQL 로 확인합니다 (Application Insights 의 Logs 는 classic 스키마라 테이블·컬럼이 소문자):
+>
+> ```kusto
+> traces
+> | where timestamp > ago(4h)
+> | where message has "[on_ingest_message] processed"
+>    or (message startswith "Executed 'Functions.on_ingest_message'" and message has "Succeeded")
+> | project timestamp, message
+> | order by timestamp desc
+> ```
+>
+> 함수 trace 는 adaptive sampling 으로 일부 누락될 수 있어, 안 보이면 시간 범위를 넓히거나 문서를 한 번 더 업로드합니다. `on_cosmos_change`(Cosmos DB 트리거)는 `requests` 가 생성되어 Invocations 탭에 정상 표시됩니다.
+
+> [!NOTE]
+> **첫 업로드 문서가 `doc_stats` 에 안 보일 수 있습니다** — Cosmos change feed 트리거는 기본적으로 lease 가 확립된 시점 이후의 *새* 변경만 읽습니다 (`start_from_beginning` 미설정). 배포 직후 첫 문서는 lease 확립 *전*에 인입되어 `on_cosmos_change` 가 놓칠 수 있습니다. 두 번째 문서부터는 정상 집계됩니다 (첫 문서 집계가 필요하면 같은 문서를 한 번 더 업로드).
 
 ### 실패 시뮬레이션 (선택)
 
 ```bash
-# 잘못된 메시지를 큐에 직접 송신 → 5회 재시도 후 DLQ
-az servicebus message send -g rg-ai200ws-dev --namespace-name $SB \
-  --queue-name ingest-queue --body '{"invalid": true}'
+# 잘못된 메시지를 큐에 직접 송신 → on_ingest_message 가 KeyError → 5회 재시도 후 DLQ.
+# az servicebus 는 관리 플레인 전용(메시지 송신 명령 없음)이라 SDK 로 보낸다.
+pip install -q azure-servicebus azure-identity   # 로컬에 없으면 1회만
+SB=$(az servicebus namespace list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+SB_FQDN="${SB}.servicebus.windows.net" python - <<'PY'
+import os
+from azure.servicebus import ServiceBusClient, ServiceBusMessage
+from azure.identity import AzureCliCredential
+with ServiceBusClient(os.environ["SB_FQDN"], AzureCliCredential()) as client:
+    with client.get_queue_sender("ingest-queue") as sender:
+        sender.send_messages(ServiceBusMessage('{"invalid": true}'))
+print("잘못된 메시지 송신 완료")
+PY
 ```
 
 약 1~2분 후 Portal 의 **Dead-lettered Messages** 카운트가 1 로 증가합니다.
