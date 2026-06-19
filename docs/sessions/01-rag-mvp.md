@@ -992,47 +992,39 @@ curl -X POST "https://$API_FQDN/api/chat" \
 1. **Cosmos DB account** → **Data Explorer** → `appdb` → `chunks` 컨테이너 → **Items** 에 시드된 chunk (id · content · embedding 필드) 노출
 
    <!-- 📸 capture: images/session-01/6a-cosmos-data-explorer-chunks.png -->
-   <!--
-   ![Cosmos DB Data Explorer 의 chunks 컨테이너에 시드된 항목 목록을 보여 주는 Azure Portal 스크린샷](../../images/session-01/6a-cosmos-data-explorer-chunks.png)
+   ![Cosmos DB Data Explorer 의 chunks 컨테이너에 시드된 항목 목록을 보여 주는 Azure Portal 스크린샷](images/session-01/6a-cosmos-data-explorer-chunks.png)
 
    **Items** 목록에서 시드된 chunk 항목을 열어 `id` · `doc_id` · `content` · `embedding` 필드가 채워져 있는지 확인합니다. `embedding` 은 3072 개의 float 배열입니다.
-   -->
 
 2. **Azure Container Apps `ca-api-ai200ws-dev`** → **Log stream** → 방금 `curl` 한 요청이 FastAPI 로그에 실시간으로 노출
 
    <!-- 📸 capture: images/session-01/6b-container-app-log-stream.png -->
-   <!--
-   ![Azure Container Apps Log stream 에 FastAPI 요청 로그가 출력되는 것을 보여 주는 Azure Portal 스크린샷](../../images/session-01/6b-container-app-log-stream.png)
+   ![Azure Container Apps Log stream 에 FastAPI 요청 로그가 출력되는 것을 보여 주는 Azure Portal 스크린샷](images/session-01/6b-container-app-log-stream.png)
 
    방금 실행한 `curl` 요청의 `POST /api/chat` 로그가 실시간으로 흐르는지 확인합니다.
-   -->
 
 3. **Application Insights** → **Live Metrics** → 요청 그래프에 `/api/chat` 호출이 즉시 반영. Server response time 도 측정됨
 
    <!-- 📸 capture: images/session-01/6c-app-insights-live-metrics.png -->
-   <!--
-   ![Application Insights Live Metrics 의 요청 그래프를 보여 주는 Azure Portal 스크린샷](../../images/session-01/6c-app-insights-live-metrics.png)
+   ![Application Insights Live Metrics 의 요청 그래프를 보여 주는 Azure Portal 스크린샷](images/session-01/6c-app-insights-live-metrics.png)
 
    요청 그래프에 `/api/chat` 호출이 즉시 반영되는지, **Server response time** 차트에 응답 시간이 함께 측정되는지 확인합니다.
-   -->
 
 4. **Application Insights** → **Transaction search** → 한 요청 안에 (HTTP 인입 → Cosmos query → Azure OpenAI 호출) span 트리 노출
 
    <!-- 📸 capture: images/session-01/6d-app-insights-transaction-search-span-tree.png -->
-   <!--
-   ![Application Insights Transaction search 의 span 트리를 보여 주는 Azure Portal 스크린샷](../../images/session-01/6d-app-insights-transaction-search-span-tree.png)
+   ![Application Insights Transaction search 의 span 트리를 보여 주는 Azure Portal 스크린샷](images/session-01/6d-app-insights-transaction-search-span-tree.png)
+   ![Application Insights Transaction search 의 span 트리 상세 (2)](images/session-01/6d-app-insights-transaction-search-span-tree-01.png)
+   ![Application Insights Transaction search 의 span 트리 상세 (3)](images/session-01/6d-app-insights-transaction-search-span-tree-02.png)
 
    한 요청 안에 HTTP 인입 → Cosmos query → Azure OpenAI 호출 순서의 span 트리가 노출되는지 확인합니다.
-   -->
 
 5. **Key Vault** → **Access control (IAM)** → User Assigned Managed Identity 가 `Key Vault Secrets User` 역할 보유 확인
 
    <!-- 📸 capture: images/session-01/6e-key-vault-iam-secrets-user.png -->
-   <!--
-   ![Key Vault 에 Key Vault Secrets User 역할이 부여된 것을 보여 주는 Azure Portal 스크린샷](../../images/session-01/6e-key-vault-iam-secrets-user.png)
+   ![Key Vault 에 Key Vault Secrets User 역할이 부여된 것을 보여 주는 Azure Portal 스크린샷](images/session-01/6e-key-vault-iam-secrets-user.png)
 
    **Role assignments** 목록에서 User Assigned Managed Identity 가 `Key Vault Secrets User` 역할을 보유하는지 확인합니다.
-   -->
 
 6. (선택) **Application Insights** → **Logs** 에서 다음 KQL 실행
 
@@ -1043,11 +1035,11 @@ curl -X POST "https://$API_FQDN/api/chat" \
    ```
 
    <!-- 📸 capture: images/session-01/6f-app-insights-logs-kql-p95.png -->
-   <!--
-   ![Application Insights Logs 의 KQL 쿼리 결과 표를 보여 주는 Azure Portal 스크린샷](../../images/session-01/6f-app-insights-logs-kql-p95.png)
+   ![Application Insights Logs 의 KQL 쿼리 결과 표를 보여 주는 Azure Portal 스크린샷](images/session-01/6f-app-insights-logs-kql-p95.png)
+   ![Application Insights Logs 의 KQL 쿼리 결과 표 (2)](images/session-01/6f-app-insights-logs-kql-p95-01.png)
+   ![Application Insights Logs 의 KQL 쿼리 결과 표 (3)](images/session-01/6f-app-insights-logs-kql-p95-02.png)
 
    결과 표에 분 단위로 집계된 `p95` 와 `count_` 값이 표시되는지 확인합니다. 방금 호출한 `/api/chat` 요청이 집계에 포함됩니다.
-   -->
 
 > [!WARNING]
 > Cosmos DB Data Explorer 진입 시 401 응답이 나오는 경우가 있습니다. **Cosmos data plane RBAC 가 부여되지 않은 상태** 입니다. 본인에게 임시로 `Cosmos DB Built-in Data Contributor` 역할을 부여하는 방법은 [docs/pitfalls/common.md](../pitfalls/common.md#cosmos-data-plane-rbac--control-plane-session-01session-04) 를 참고합니다.
