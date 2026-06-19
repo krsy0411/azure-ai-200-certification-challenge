@@ -539,10 +539,32 @@ psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
 1. **Service Bus** → 큐 `ingest-queue` → **Metrics** → `Active Messages` (업로드 직후 1 → 0), `Dead-lettered Messages` (0 유지)
+
+   <!-- 📸 capture: images/session-04/04-01-servicebus-queue-metrics-01.png -->
+   ![Service Bus 큐 ingest-queue 의 Active Messages 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-04/04-01-servicebus-queue-metrics-01.png)
+   ![Service Bus 큐 ingest-queue 의 Dead-lettered Messages 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-04/04-01-servicebus-queue-metrics-02.png)
+
 2. **Application Insights `ai-…`** → **Logs** — `on_ingest_message` 실행 성공 확인 (아래 [!NOTE] 의 KQL). Log stream 은 host 잡음이 많아 권장하지 않습니다
+
+   <!-- 📸 capture: images/session-04/04-02-function-appinsights-ingest.png -->
+   ![on_ingest_message 실행 성공 trace 가 조회된 Application Insights Logs 의 Azure Portal 스크린샷](images/session-04/04-02-function-appinsights-ingest.png)
+
 3. **Function App** → **Functions** → `on_cosmos_change` → **Invocations** — change feed 실행 1건 `Success`
+
+   <!-- 📸 capture: images/session-04/04-03-cosmoschange-invocations-01.png -->
+   ![on_cosmos_change 함수의 Invocations 탭에 change feed 실행이 Success 로 표시된 Azure Portal 스크린샷](images/session-04/04-03-cosmoschange-invocations-01.png)
+   ![on_cosmos_change 함수의 Invocations 실행 상세를 보여 주는 Azure Portal 스크린샷](images/session-04/04-03-cosmoschange-invocations-02.png)
+
 4. **Event Grid System Topic** → **Metrics** — `Publish Events` · `Delivery Successes` 카운트 1 증가
+
+   <!-- 📸 capture: images/session-04/04-04-eventgrid-systemtopic-metrics.png -->
+   ![Event Grid System Topic 의 Publish Events 와 Delivery Successes 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-04/04-04-eventgrid-systemtopic-metrics.png)
+
 5. **Cosmos DB** → **Data Explorer** → `chunks` 에서 `SELECT * FROM c WHERE c.doc_id = 'sample-policy'`, `doc_stats` 에서 집계 카운트 확인 (아래 [!NOTE] — 첫 문서는 `doc_stats` 에 안 보일 수 있음)
+
+   <!-- 📸 capture: images/session-04/04-05-cosmos-chunks-items.png -->
+   ![Cosmos DB Data Explorer 의 chunks 컨테이너에서 sample-policy 문서의 chunk 항목들이 조회된 Azure Portal 스크린샷](images/session-04/04-05-cosmos-chunks-items.png)
+   ![Cosmos DB Data Explorer 의 doc_stats 컨테이너에서 문서 집계 카운트 항목이 조회된 Azure Portal 스크린샷](images/session-04/04-06-cosmos-docstats-items.png)
 
 > [!NOTE]
 > **`on_ingest_message` 의 Invocations(호출) 탭은 비어 보입니다** — Flex Consumption + Python 의 Service Bus 트리거 실행은 App Insights `requests` 텔레메트리를 만들지 않아 **Functions → `on_ingest_message` → Invocations** 탭에 실행이 표시되지 않습니다 (데이터는 정상 처리됨). 또한 **Log stream** 은 host 의 storage 리스 폴링·토큰 로그가 많아 함수 로그가 묻힙니다. 실행 성공은 **Application Insights `ai-…` → Logs** 에서 아래 KQL 로 확인합니다 (Application Insights 의 Logs 는 classic 스키마라 테이블·컬럼이 소문자):
@@ -580,6 +602,10 @@ PY
 ```
 
 약 1~2분 후 Portal 의 **Dead-lettered Messages** 카운트가 1 로 증가합니다.
+
+<!-- 📸 capture: images/session-04/04-07-servicebus-deadletter-01.png -->
+![잘못된 메시지가 5회 재시도 후 Dead-letter 큐로 이동해 Dead-lettered Messages 카운트가 증가한 Service Bus 의 Azure Portal 스크린샷](images/session-04/04-07-servicebus-deadletter-01.png)
+![Dead-letter 큐의 메시지 상세를 보여 주는 Service Bus 의 Azure Portal 스크린샷](images/session-04/04-07-servicebus-deadletter-02.png)
 
 ---
 
