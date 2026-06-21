@@ -1,6 +1,6 @@
 # 자원 정리
 
-> 워크샵이 끝났으면 **즉시 정리** 하세요. 가장 비싼 idle 자원은 Managed Redis Enterprise M10 (~₩11,680/일) 입니다.
+> 워크샵이 끝났으면 **즉시 정리**합니다. 가장 비싼 idle 자원은 Managed Redis Enterprise M10 (~₩11,680/일) 입니다.
 
 ---
 

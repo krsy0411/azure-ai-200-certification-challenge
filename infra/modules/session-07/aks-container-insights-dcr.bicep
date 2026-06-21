@@ -30,6 +30,18 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
             'Microsoft-KubePodInventory'
             'Microsoft-KubeNodeInventory'
           ]
+          // enableContainerLogV2 를 켜지 않으면 컨테이너 stdout/stderr 로그가 신규
+          // ContainerLogV2 가 아니라 레거시 ContainerLog 테이블로 흘러간다 (docs §3 KQL 은
+          // ContainerLogV2 를 조회하므로 빈 결과로 보인다). namespaceFilteringMode=Off 로 모든
+          // 네임스페이스(kube-system 제외)의 로그를 수집한다.
+          extensionSettings: {
+            dataCollectionSettings: {
+              interval: '1m'
+              namespaceFilteringMode: 'Off'
+              namespaces: []
+              enableContainerLogV2: true
+            }
+          }
         }
       ]
     }

@@ -239,25 +239,24 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
-정상 트래픽 20건 + 의도적 오류 10건을 발생시켜 span·메트릭·알림을 채웁니다.
+정상 트래픽으로 커스텀 span 과 메트릭을 채운 뒤, 의도적 오류로 오류율 알림을 발화시킵니다. `for` 루프 대신 크로스 플랫폼 헬퍼 스크립트를 `uv run` 으로 실행하므로 Windows·macOS·Linux 어디서나 동일하게 동작합니다.
 
 ```bash
-for i in $(seq 1 20); do
-  curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/json" \
-    -d "{\"q\":\"휴가 정책 질문 $i\",\"session_id\":\"demo-$i\"}" > /dev/null
-done
+# 정상 트래픽 20건 — 커스텀 span(rag.retrieve·rag.generate·cache.lookup)·메트릭 생성
+uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 20
 
-# 오류율 알림 검증 — 카오스 10건
-for i in $(seq 1 10); do
-  curl -sX POST "https://$API_FQDN/api/_chaos" > /dev/null
-done
+# 오류율 알림 검증 — 의도적 500 을 10건 발생 (간격 필수)
+uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --chaos 10 --interval 3
 ```
+
+> [!WARNING]
+> **chaos 는 반드시 간격을 둡니다** — `/api/_chaos` 는 즉시 500 을 반환하므로 간격 없이 몰아치면 일부 요청이 Application Insights 에 누락돼 5분 내 5건 임계값을 못 채워 알림이 발화하지 않습니다. `--interval 3` 으로 간격을 두면 모든 요청이 기록됩니다. 정상 `/api/chat` 은 요청마다 처리 시간이 있어 자연히 간격이 생기므로 `--count` 만으로 충분합니다.
 
 5~10분 후 본인 이메일에 알림 메일 도착 여부를 확인합니다.
 
 <!-- 📸 capture: images/session-06/2-alert-notification-email.png -->
 <!--
-![Azure Monitor 오류율 경고 발화로 수신된 알림 이메일을 보여 주는 스크린샷](../../images/session-06/2-alert-notification-email.png)
+![Azure Monitor 오류율 경고 발화로 수신된 알림 이메일을 보여 주는 스크린샷](images/session-06/2-alert-notification-email.png)
 
 이메일 제목에 alert 이름 `alert-error-rate-...` 가 포함되어 있는지, 본문의 검색 결과 수가 임계값 5 를 초과했는지 확인합니다. 메일이 오지 않으면 Action Group 구독 확인 메일의 `Subscribe` 링크를 클릭했는지 먼저 점검합니다.
 -->
@@ -270,36 +269,63 @@ done
 
 1. **Application Insights** → **Workbooks** → `AI-200 Workshop 관측성` — P95 latency · 분당 토큰 · 캐시 hit rate 가 한 화면에 시각화
 
-   <!-- 📸 capture: images/session-06/3a-workbook-overview.png -->
+   <!-- 📸 capture: images/session-06/3a-workbook-overview-01.png -->
+   <!-- 📸 capture: images/session-06/3a-workbook-overview-02.png -->
    <!--
-   ![P95 latency·분당 토큰·캐시 hit rate 차트가 표시된 워크샵 워크북을 보여 주는 Azure Portal 스크린샷](../../images/session-06/3a-workbook-overview.png)
+   ![워크샵 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3a-workbook-overview-01.png)
+   ![워크샵 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3a-workbook-overview-02.png)
 
    워크북의 세 차트 — P95 latency · 분당 토큰 · 캐시 hit rate — 에 2단계에서 발생시킨 트래픽이 반영되어 있는지 확인합니다. 분당 토큰 차트에 `tokens.prompt` 와 `tokens.completion` 두 계열이 보이면 OpenTelemetry 메트릭 발행이 정상입니다.
    -->
 
-2. **Application Insights** → **Transaction search** → 최근 `POST /api/chat` 한 건 → trace 트리에 `rag.retrieve`(`retrieval.count`) · `rag.generate`(`tokens.prompt`/`tokens.completion`) · `cache.lookup`(`cache_hit`) span 노출
+2. **Application Insights** → **Transaction search** → 커스텀 RAG span 트리 확인
 
-   <!-- 📸 capture: images/session-06/3b-transaction-search-span-tree.png -->
+   커스텀 span 은 시맨틱 캐시가 켜진 상태에서 캐시 **hit** 가 나면 `rag.retrieve` · `rag.generate` 가 통째로 건너뛰어지고, 트래픽이 적거나 replica 가 막 깨어난 상황에서는 일부 span 이 누락될 수 있습니다. 세 span 을 한 trace 에서 억지로 보려 하지 말고, **안정적으로 재현되는 방식** — 캐시를 잠깐 끄고 지속 트래픽을 흘려 모든 요청이 full RAG 가 되게 하는 방식 — 으로 커스텀 RAG span 트리를 캡쳐합니다.
+
+   1. Portal 의 **Feature manager** (또는 CLI) 에서 `enable_semantic_cache` 플래그를 잠깐 **Off** 로 토글합니다. 캐시가 꺼지면 모든 요청이 retrieval + generation 을 거치는 full RAG 가 됩니다.
+   2. 지속 트래픽으로 replica 를 깨워 둔 채 요청을 흘립니다.
+
+      ```bash
+      uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 20
+      ```
+
+   3. **Transaction search** 에서 소요 시간이 긴 (2~4초) `POST /api/chat` 한 건을 엽니다. trace 트리에 자동 request span 아래로 `rag.retrieve` · `rag.generate` · `POST /openai/.../gpt-5-mini/chat/completions` 가 자식 span 으로 중첩되어 보입니다. 이 화면을 캡쳐합니다.
+   4. 캡쳐가 끝나면 `enable_semantic_cache` 플래그를 다시 **On** 으로 복구합니다.
+
+   `cache.lookup` span 은 캐시가 켜진 상태에서만 생기며, [session-03](./03-redis-cache.md) · [session-05](./05-app-config-flags.md) 에서 이미 캡쳐했습니다.
+
+   > [!NOTE]
+   > 커스텀 span (특히 `rag.generate`) 은 트래픽이 적거나 replica 가 막 깨어난 (콜드 스타트) 상황에서는 OpenTelemetry 의 배치 export 와 Azure Container Apps 의 scale-to-zero 특성상 일부 누락될 수 있습니다. 위처럼 지속 트래픽을 흘려 replica 를 깨워 두면 안정적으로 기록됩니다. 이는 코드 문제가 아니라 서버리스 환경의 배치 텔레메트리 특성입니다.
+
+   <!-- 📸 capture: images/session-06/3b-transaction-search-span-tree-01.png -->
+   <!-- 📸 capture: images/session-06/3b-transaction-search-span-tree-02.png -->
    <!--
-   ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷](../../images/session-06/3b-transaction-search-span-tree.png)
+   ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3b-transaction-search-span-tree-01.png)
+   ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3b-transaction-search-span-tree-02.png)
 
-   자동 계측된 `POST /api/chat` request span 아래에 `rag.retrieve` · `rag.generate` · `cache.lookup` 이 자식 span 으로 중첩되어 있는지 확인합니다. 각 span 을 선택하면 `retrieval.count` · `tokens.prompt` 같은 attribute 가 customDimensions 에 표시됩니다.
+   자동 계측된 `POST /api/chat` request span 아래에 `rag.retrieve` · `rag.generate` · `POST /openai/.../gpt-5-mini/chat/completions` 가 자식 span 으로 중첩되어 있는지 확인합니다. 각 span 을 선택하면 `retrieval.count` · `tokens.prompt` 같은 attribute 가 customDimensions 에 표시됩니다.
    -->
 
 3. **Application Insights** → **Failures** → `/api/_chaos` 호출의 stack trace
 
-   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace.png -->
+   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace-01.png -->
+   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace-02.png -->
+   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace-03.png -->
    <!--
-   ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷](../../images/session-06/3c-failures-chaos-stack-trace.png)
+   ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3c-failures-chaos-stack-trace-01.png)
+   ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3c-failures-chaos-stack-trace-02.png)
+   ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (3)](images/session-06/3c-failures-chaos-stack-trace-03.png)
 
    Failures 화면의 작업 목록에서 `POST /api/_chaos` 의 실패 10건이 집계되는지, 우측 패널에서 `intentional chaos` 예외의 stack trace 가 보이는지 확인합니다.
    -->
 
 4. **Azure Monitor** → **Alerts** → 발화된 오류율 alert + 본인 이메일 메일
 
-   <!-- 📸 capture: images/session-06/3d-alerts-fired-error-rate.png -->
+   <!-- 📸 capture: images/session-06/3d-alerts-fired-error-rate-01.png -->
+   <!-- 📸 capture: images/session-06/3d-alerts-fired-error-rate-02.png -->
    <!--
-   ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷](../../images/session-06/3d-alerts-fired-error-rate.png)
+   ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷 (1)](images/session-06/3d-alerts-fired-error-rate-01.png)
+   ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷 (2)](images/session-06/3d-alerts-fired-error-rate-02.png)
 
    Alerts 목록에 `alert-error-rate-...` 가 **Fired(발생됨)** 상태로 표시되는지 확인합니다. Action Group 에 등록한 본인 이메일로 같은 내용의 알림 메일이 도착했는지도 함께 확인합니다.
    -->
@@ -323,7 +349,7 @@ done
 
    <!-- 📸 capture: images/session-06/3e-logs-custom-metrics-timechart.png -->
    <!--
-   ![customMetrics KQL 결과가 timechart 로 렌더링된 모습을 보여 주는 Azure Portal 스크린샷](../../images/session-06/3e-logs-custom-metrics-timechart.png)
+   ![customMetrics KQL 결과가 timechart 로 렌더링된 모습을 보여 주는 Azure Portal 스크린샷](images/session-06/3e-logs-custom-metrics-timechart.png)
 
    토큰 쿼리는 `tokens.prompt` · `tokens.completion` 두 계열의 시계열로, 캐시 쿼리는 `hit_rate` 값이 채워진 차트로 렌더링되는지 확인합니다. 빈 결과라면 OpenTelemetry 메트릭(Counter) 발행이 누락된 상태입니다.
    -->
@@ -340,7 +366,7 @@ done
 | **2. 로그·메트릭 분석** | KQL · 오류/성능 탐색(p95) · 통합 문서(Workbook) · 경고(metric vs log search · action group) | **사용** — Workbook(ARM JSON 임베드) + Log Search Alert(오류율·p95) + Action Group(3단계). **생략** — 대시보드(Workbook 으로 대체) · 스마트 감지(자동·무료라 확인만) |
 
 > [!NOTE]
-> **본 레포 확장** — Workbook 의 `Microsoft.Insights/workbooks` Bicep 임베드는 학습 경로 범위 밖이지만, 본 워크샵의 Bicep 우선(IaC) 원칙에 따라 ARM JSON 을 Bicep 에 임베드합니다. 인증은 연결 문자열(ikey 포함) 인제스션이라 `Monitoring Metrics Publisher` 역할은 불필요합니다.
+> **본 저장소 확장** — Workbook 의 `Microsoft.Insights/workbooks` Bicep 임베드는 학습 경로 범위 밖이지만, 본 워크샵의 Bicep 우선(IaC) 원칙에 따라 ARM JSON 을 Bicep 에 임베드합니다. 인증은 연결 문자열(ikey 포함) 인제스션이라 `Monitoring Metrics Publisher` 역할은 불필요합니다.
 
 ---
 
@@ -353,7 +379,7 @@ done
 > **커스텀 루트 span 을 만들지 않습니다** — FastAPI 자동 계측이 이미 SERVER(requests) span 을 만들므로, 또 다른 루트를 만들면 중복됩니다. RAG span 들은 `start_as_current_span` 으로 열어 자동 request span 의 자식으로 중첩합니다.
 
 > [!CAUTION]
-> **FastAPI 계측은 `app = FastAPI(...)` 직후 모듈 레벨에서** — `configure_azure_monitor()` + `FastAPIInstrumentor.instrument_app(app)` 를 lifespan startup 에서 호출하면 미들웨어 스택이 이미 만들어진 뒤라 **인입 요청(requests) span 이 통째로 누락**됩니다(커스텀 span·metric 은 잡히는데 requests 만 빠짐). 그러면 위의 "자동 request span" 전제가 깨지고, 본 세션의 requests 기반 알림·Workbook P95 에 데이터가 안 들어옵니다. 반드시 app 생성 직후(요청 처리 전)에 계측하세요.
+> **FastAPI 계측은 `app = FastAPI(...)` 직후 모듈 레벨에서** — `configure_azure_monitor()` + `FastAPIInstrumentor.instrument_app(app)` 를 lifespan startup 에서 호출하면 미들웨어 스택이 이미 만들어진 뒤라 **인입 요청(requests) span 이 통째로 누락**됩니다(커스텀 span·metric 은 잡히는데 requests 만 빠짐). 그러면 위의 "자동 request span" 전제가 깨지고, 본 세션의 requests 기반 알림·Workbook P95 에 데이터가 안 들어옵니다. 반드시 app 생성 직후(요청 처리 전)에 계측합니다.
 
 > [!CAUTION]
 > **민감 정보 attribute 금지** — 질문 본문·답변을 attribute 에 넣으면 Application Insights 에 영구 기록됩니다. `user.session_id` 까지만 기록하고 본문은 넣지 않습니다.

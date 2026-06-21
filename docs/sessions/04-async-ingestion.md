@@ -645,10 +645,10 @@ PY
 > **`identity.type='UserAssigned'` 자원은 `identity.principalId` 미노출** — `userAssignedIdentities[id].principalId` 로 접근합니다.
 
 > [!CAUTION]
-> **Event Grid Blob 구독에 subject 필터 필수** — `subjectBeginsWith` 없이 두면 `documents` 뿐 아니라 함수 배포 zip 이 올라가는 `deployments` 컨테이너의 `BlobCreated` 까지 큐로 전달됩니다. 그 blob 은 곧 삭제되어 함수가 `BlobNotFound` 로 실패하고 큐가 오염됩니다 (`func publish` 직후 다발). 구독 필터를 `/blobServices/default/containers/documents/` 로 제한하세요 (본 워크샵 Bicep 반영됨).
+> **Event Grid Blob 구독에 subject 필터 필수** — `subjectBeginsWith` 없이 두면 `documents` 뿐 아니라 함수 배포 zip 이 올라가는 `deployments` 컨테이너의 `BlobCreated` 까지 큐로 전달됩니다. 그 blob 은 곧 삭제되어 함수가 `BlobNotFound` 로 실패하고 큐가 오염됩니다 (`func publish` 직후 다발). 구독 필터를 `/blobServices/default/containers/documents/` 로 제한합니다 (본 워크샵 Bicep 반영됨).
 
 > [!CAUTION]
-> **PostgreSQL 방화벽에 "Allow Azure services" 필요** — Azure 호스팅 함수가 UAMI 로 PG 에 접속하는데, session-02 PG 방화벽이 dev IP 만 열어두면 함수의 `_upsert_pg` 가 `ConnectionTimeout` (~132초) 으로 실패합니다 (Cosmos 는 적재되는데 PG 만 빔). PG 에 `0.0.0.0` (Allow Azure services) 규칙을 추가하세요 (본 워크샵 session-04 Bicep 에 반영됨). 운영에선 VNet 통합을 권장합니다.
+> **PostgreSQL 방화벽에 "Allow Azure services" 필요** — Azure 호스팅 함수가 UAMI 로 PG 에 접속하는데, session-02 PG 방화벽이 dev IP 만 열어두면 함수의 `_upsert_pg` 가 `ConnectionTimeout` (~132초) 으로 실패합니다 (Cosmos 는 적재되는데 PG 만 빔). PG 에 `0.0.0.0` (Allow Azure services) 규칙을 추가합니다 (본 워크샵 session-04 Bicep 에 반영됨). 운영에선 VNet 통합을 권장합니다.
 
 ---
 

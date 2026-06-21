@@ -106,7 +106,7 @@ module aks '../../modules/session-07/aks-cluster.bicep' = {
 
 ### 1.3 Container Insights (DCR + DCRA)
 
-`// -------- 3) ...` 주석 아래에 채웁니다. `addonProfiles.omsagent` 단독으로는 데이터가 흐르지 않으므로 DCR + DCRA 를 명시 선언합니다.
+`// -------- 3) ...` 주석 아래에 채웁니다. `addonProfiles.omsagent` 단독으로는 데이터가 흐르지 않으므로 DCR + DCRA 를 명시 선언합니다. DCR 에는 `enableContainerLogV2=true` 를 두지만, 실제 `ContainerLogV2` 스키마 전환은 [2.3](#23-placeholder-치환--배포) 에서 적용하는 에이전트 ConfigMap(`container-insights-config.yaml`) 이 담당합니다.
 
 ```bicep
 module dcr '../../modules/session-07/aks-container-insights-dcr.bicep' = {
@@ -309,7 +309,8 @@ AOAI_ENDPOINT=$(az cognitiveservices account show -n $ACCT -g rg-ai200ws-dev --q
 COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 COSMOS_ENDPOINT=$(az cosmosdb show -n $COSMOS -g rg-ai200ws-dev --query "documentEndpoint" -o tsv)
 
-# 매니페스트 4개의 placeholder 일괄 치환 (Linux · macOS · WSL)
+# 매니페스트의 placeholder 일괄 치환 (Linux · macOS · WSL)
+# container-insights-config.yaml 에는 placeholder 가 없어 치환 대상에 포함돼도 변화가 없습니다.
 sed -i \
   -e "s|__ACR_LOGIN_SERVER__|$ACR_LOGIN_SERVER|g" \
   -e "s|__UAMI_CLIENT_ID__|$UAMI_CLIENT_ID|g" \
@@ -317,8 +318,15 @@ sed -i \
   -e "s|__COSMOS_ENDPOINT__|$COSMOS_ENDPOINT|g" \
   infra/sessions/07-aks/manifests/*.yaml
 
-# 적용 — ServiceAccount · ConfigMap · Deployment · Service
+# 적용 — ServiceAccount · ConfigMap · Deployment · Service · Container Insights 에이전트 ConfigMap
 kubectl apply -f infra/sessions/07-aks/manifests/
+```
+
+`container-insights-config.yaml` 은 Container Insights 에이전트 ConfigMap(`container-azm-ms-agentconfig`, `kube-system`) 으로, 컨테이너 stdout/stderr 로그를 신규 `ContainerLogV2` 스키마로 수집하도록 설정합니다. 에이전트가 이 설정을 반영하려면 재시작이 필요합니다.
+
+```bash
+# Container Insights 에이전트가 ContainerLogV2 스키마 설정을 반영하도록 재시작
+kubectl rollout restart daemonset/ama-logs deployment/ama-logs-rs -n kube-system
 ```
 
 ```bash
@@ -349,7 +357,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
    <!-- 📸 capture: images/session-07/3a-aks-workloads-deployment-ready.png -->
    <!--
-   ![apps-api Deployment 가 2/2 Ready 상태인 Workloads 화면을 보여 주는 Azure Portal 스크린샷](../../images/session-07/3a-aks-workloads-deployment-ready.png)
+   ![apps-api Deployment 가 2/2 Ready 상태인 Workloads 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3a-aks-workloads-deployment-ready.png)
 
    `kubectl apply` 로 배포한 `apps-api` Deployment 가 Workloads 블레이드의 **Deployments** 탭에 **Ready 2/2** 로 표시되는지 확인합니다. Pods 탭에서 두 파드 모두 **Running** 상태인지도 함께 확인합니다.
    -->
@@ -358,7 +366,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
    <!-- 📸 capture: images/session-07/3b-aks-service-external-ip.png -->
    <!--
-   ![apps-api Service 에 External IP 가 할당된 Services and ingresses 화면을 보여 주는 Azure Portal 스크린샷](../../images/session-07/3b-aks-service-external-ip.png)
+   ![apps-api Service 에 External IP 가 할당된 Services and ingresses 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3b-aks-service-external-ip.png)
 
    `apps-api` Service 의 Type 이 **Load balancer** 이고, External IP 가 [2.4 호출 테스트](#24-호출-테스트) 에서 사용한 `LB_IP` 와 같은 값인지 확인합니다.
    -->
@@ -367,7 +375,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
    <!-- 📸 capture: images/session-07/3c-aks-insights-node-pod-metrics.png -->
    <!--
-   ![노드와 Pod 의 CPU·메모리 메트릭 차트가 표시된 AKS Insights 화면을 보여 주는 Azure Portal 스크린샷](../../images/session-07/3c-aks-insights-node-pod-metrics.png)
+   ![노드와 Pod 의 CPU·메모리 메트릭 차트가 표시된 AKS Insights 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3c-aks-insights-node-pod-metrics.png)
 
    노드 2개와 `apps-api` Pod 의 CPU·메모리 사용량 차트에 데이터가 채워져 있는지 확인합니다. 차트가 보이면 DCR + DCRA 로 선언한 Container Insights 가 정상 동작한다는 증거입니다.
    -->
@@ -384,11 +392,17 @@ curl -sX POST "http://$LB_IP/api/chat" \
    | take 100
    ```
 
+   > [!NOTE]
+   > `ContainerLogV2` 는 [2.3 placeholder 치환 + 배포](#23-placeholder-치환--배포) 에서 적용한 `container-insights-config.yaml` 과 에이전트 재시작 이후 몇 분(첫 수집까지 약 5~15분) 지나야 채워집니다. 재배포 직후 즉시 조회하면 빈 결과일 수 있으므로 잠시 기다린 뒤 다시 실행합니다.
+
+   > [!WARNING]
+   > `container-insights-config.yaml`(`containerlog_schema_version=v2`) 을 적용하지 않으면 컨테이너 stdout 로그가 신규 `ContainerLogV2` 가 아니라 레거시 `ContainerLog` 테이블로 수집되어 이 KQL 이 빈 결과로 보입니다. DCR 의 `enableContainerLogV2` 설정만으로는 전환되지 않으며, 에이전트 ConfigMap 의 `containerlog_schema_version=v2` 가 실제 스위치입니다. 빈 결과면 `ContainerLog`(V1) 테이블을 조회해 로그가 거기로 가고 있지 않은지, ConfigMap 적용·에이전트 재시작 여부를 확인합니다.
+
    <!-- 📸 capture: images/session-07/3d-aks-logs-containerlogv2.png -->
    <!--
-   ![ContainerLogV2 테이블 KQL 결과로 api 컨테이너 로그가 조회된 Logs 화면을 보여 주는 Azure Portal 스크린샷](../../images/session-07/3d-aks-logs-containerlogv2.png)
+   ![ContainerLogV2 테이블 KQL 결과로 api 컨테이너 로그가 조회된 Logs 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3d-aks-logs-containerlogv2.png)
 
-   쿼리 결과에 `api` 컨테이너의 최근 로그 행이 표시되는지 확인합니다. 행이 비어 있다면 Container Insights 데이터 수집이 아직 시작되지 않았거나 DCR + DCRA 가 누락된 상태입니다.
+   쿼리 결과에 `api` 컨테이너의 최근 로그 행이 표시되는지 확인합니다. 행이 비어 있다면 `container-insights-config.yaml` 적용·에이전트 재시작 이후 수집이 시작되기까지 몇 분 기다렸는지, 또는 로그가 레거시 `ContainerLog` 테이블로 흘러가고 있지 않은지 확인합니다.
    -->
 
 5. (검증) `kubectl logs -l app=apps-api --tail=50` — Workload Identity 로 Azure OpenAI · Cosmos 호출이 성공하는지 (인증 오류 없이 RAG 응답)
@@ -406,7 +420,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
 | **3. AKS 모니터링·문제 해결** | Container Insights · kubectl logs/describe/top · 연결 확인 | **사용** — Container Insights(DCR+DCRA) + `kubectl logs` + ContainerLogV2(3단계). 의도적 장애 주입 연습은 생략 |
 
 > [!NOTE]
-> **본 레포 확장** — Workload Identity(federated User Assigned Managed Identity)·Container Insights DCR/DCRA·`AcrPull` IaC 부여는 학습 경로 본문 범위를 넘어서는 실전 패턴입니다. 학습 경로의 K8s Secret 대신 본 워크샵 표준(Entra ID + DefaultAzureCredential)을 일관되게 적용했습니다.
+> **본 저장소 확장** — Workload Identity(federated User Assigned Managed Identity)·Container Insights DCR/DCRA·`AcrPull` IaC 부여는 학습 경로 본문 범위를 넘어서는 실전 패턴입니다. 학습 경로의 K8s Secret 대신 본 워크샵 표준(Entra ID + DefaultAzureCredential)을 일관되게 적용했습니다.
 
 ---
 

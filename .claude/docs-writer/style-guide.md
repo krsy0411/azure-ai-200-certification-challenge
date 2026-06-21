@@ -477,11 +477,11 @@ az deployment sub create \
 
 ### 5.1 이미지 파일 규칙
 
-- 경로: 저장소 루트의 `images/` 아래 세션별 하위 폴더 — `images/session-NN/<단계번호>-<kebab-slug>.png`
-  - 예: `images/session-04/2-service-bus-queue-active-messages.png`
-- `<단계번호>` 는 해당 스크린샷이 속한 단계 번호. 한 단계에 여러 캡쳐가 있으면 `2a-`, `2b-` 처럼 영문 소문자를 붙입니다
+- 실제 파일 위치: `docs/sessions/images/` 아래 세션별 하위 폴더 — `docs/sessions/images/session-NN/<단계번호>-<kebab-slug>.png`
+  - 예: `docs/sessions/images/session-04/2-service-bus-queue-active-messages.png`
+- `<단계번호>` 는 해당 스크린샷이 속한 단계 번호. 한 단계에 여러 캡쳐가 있으면 `2a-`, `2b-` 처럼 영문 소문자를 붙입니다. **파일명은 단계 순서대로 gap 없이 연속** (예: 캡쳐 단계 사이를 빼면 `3a·3b·3d` 가 아니라 `3a·3b·3c` 로 당겨 재정렬)
 - `<kebab-slug>` 는 화면 내용을 나타내는 영문 소문자 kebab-case
-- 세션 문서 (`docs/sessions/*.md`) 에서의 상대 경로는 `../../images/session-NN/<파일명>.png`
+- 세션 문서 (`docs/sessions/*.md`) 에서의 상대 경로는 **`images/session-NN/<파일명>.png`** — 문서가 `docs/sessions/` 안에 있고 이미지가 `docs/sessions/images/` 에 있으므로 상대경로는 `images/...` 다. `../../images/...` 로 쓰면 저장소 루트를 가리켜 **렌더링이 깨진다**(session-03/04 의 실제 활성 임베드가 정본).
 
 ### 5.2 삽입 시점 (moaw·ko-kr quickstart 분석 기반)
 
@@ -496,7 +496,7 @@ az deployment sub create \
 ```markdown
 <!-- 📸 capture: <이미지 경로> -->
 <!--
-![<alt text — "...를 보여 주는 Azure Portal 스크린샷" 패턴>](../../images/session-NN/<파일명>.png)
+![<alt text — "...를 보여 주는 Azure Portal 스크린샷" 패턴>](images/session-NN/<파일명>.png)
 
 <캡션 1~2문장 — 화면에서 무엇을 확인해야 하는지>
 -->
@@ -507,7 +507,7 @@ az deployment sub create \
 ```markdown
 <!-- 📸 capture: images/session-04/2-service-bus-queue-active-messages.png -->
 <!--
-![Service Bus 큐의 활성 메시지 수 5건을 보여 주는 Azure Portal 스크린샷](../../images/session-04/2-service-bus-queue-active-messages.png)
+![Service Bus 큐의 활성 메시지 수 5건을 보여 주는 Azure Portal 스크린샷](images/session-04/2-service-bus-queue-active-messages.png)
 
 큐 개요 화면의 **활성 메시지 수** 가 송신한 메시지 수와 일치하는지 확인합니다. 0 이라면 수신 워커가 이미 소비한 상태입니다.
 -->

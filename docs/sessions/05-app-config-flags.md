@@ -31,7 +31,7 @@
 - **Portal 에서 확인할 지표 / 데이터**
   - App Configuration → Configuration explorer — 키/값 + Key Vault reference 목록
   - App Configuration → Feature manager — 피처 플래그 토글 UI
-  - Application Insights → Live Metrics — 토글 OFF 직후 `cache.lookup` 의 hit 가 사라지는 모습
+  - Application Insights → Logs(KQL) — 토글 OFF 직후 `cache.lookup` 의 분당 발생 건수가 0 으로 떨어지는 절벽
 
 > [!TIP]
 > 이 세션은 `Bicep 조립 → 배포 → loader 코드 채우기 → 이미지 빌드·배포 → 포털 토글 실험 → Portal 확인` 흐름으로 진행합니다.
@@ -286,26 +286,25 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
-캐시 ON 상태에서 같은 질문 2회 호출 — 두 번째가 빠른지 확인합니다.
+여기서는 CLI 로 ON/OFF 효과를 빠르게 확인합니다. Portal 토글로 절벽 차트를 만드는 본 캡쳐 시퀀스는 [3단계 · Azure Portal UI 에서 확인](#3단계--azure-portal-ui-에서-확인) 에서 진행합니다.
+
+캐시 ON 상태에서 검증용 트래픽을 흘려, hot 질문이 캐시 hit 으로 즉시 반환되는지 확인합니다. 헬퍼 스크립트는 hot 질문 (캐시 hit 유발) 과 다양한 질문 (retrieve+generate = miss 유발) 을 번갈아 보냅니다.
 
 ```bash
-time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/json" -d '{"q":"휴가 규정"}' > /dev/null
-time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/json" -d '{"q":"휴가 규정"}' > /dev/null
+uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 6
 ```
 
-CLI 로 피처 플래그 OFF 토글 후, 폴링 주기만큼 대기합니다.
+출력에서 `q=휴가 규정 알려줘` 줄이 두 번째 등장부터 0.1~0.2s 면 캐시 hit 입니다. 다양한 질문 줄은 retrieve+generate 를 매번 수행하므로 더 느립니다.
+
+CLI 로 피처 플래그를 OFF 로 토글하고, 폴링 주기만큼 대기한 뒤 다시 트래픽을 흘립니다. 이번에는 hot 질문도 캐시를 우회해 느려집니다.
 
 ```bash
 az appconfig feature disable -n $AC --feature enable_semantic_cache --yes
 sleep 60
+uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 6
 ```
 
-캐시 OFF 상태에서 같은 질문 2회 호출 — 둘 다 느린지(캐시 우회) 확인합니다.
-
-```bash
-time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/json" -d '{"q":"휴가 규정"}' > /dev/null
-time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/json" -d '{"q":"휴가 규정"}' > /dev/null
-```
+`q=휴가 규정 알려줘` 줄까지 retrieve+generate 시간으로 느려지면 캐시가 우회된 것입니다.
 
 다시 켜려면 `az appconfig feature enable -n $AC --feature enable_semantic_cache --yes`.
 
@@ -317,59 +316,66 @@ time curl -sX POST "https://$API_FQDN/api/chat" -H "Content-Type: application/js
 
 1. **App Configuration** → **Configuration explorer** — `aoai:endpoint` 등 키 목록 + Key Vault reference 키(`secrets:aoai-endpoint`)는 타입이 `Key vault reference`
 
-   <!-- 📸 capture: images/session-05/3a-app-config-configuration-explorer.png -->
-   <!--
-   ![Configuration explorer 의 키/값 목록을 보여 주는 Azure Portal 스크린샷](../../images/session-05/3a-app-config-configuration-explorer.png)
+   ![Configuration explorer 의 키/값 목록을 보여 주는 Azure Portal 스크린샷](images/session-05/3a-app-config-configuration-explorer.png)
 
    `aoai:endpoint` · `cosmos:endpoint` · `pg:host` · `redis:host` 키 4개와 `sentinel` 이 나열되고, `secrets:aoai-endpoint` 의 타입이 **Key vault reference** 로 표시되는지 확인합니다.
-   -->
 
-2. **App Configuration** → **Feature manager** — `enable_semantic_cache` 토글. **포털에서 직접 토글** 후 30~60초 안에 동작이 바뀌는지 확인
+2. **App Configuration** → **Feature manager** — `enable_semantic_cache` 토글. 토글은 CLI 가 아니라 **Feature manager 화면에서 직접** 수행해 Portal 조작을 경험합니다.
 
-   <!-- 📸 capture: images/session-05/3b-app-config-feature-manager-toggle.png -->
-   <!--
-   ![Feature manager 의 enable_semantic_cache 피처 플래그 토글을 보여 주는 Azure Portal 스크린샷](../../images/session-05/3b-app-config-feature-manager-toggle.png)
+   아래 순서로 터미널 (트래픽) 과 Portal (토글) 을 오가며, 4번 **Logs** 차트에 나타날 절벽 데이터를 만듭니다.
 
-   `enable_semantic_cache` 와 `enable_pg_backend` 플래그 2개가 나열되는지 확인합니다. 토글을 끄면 폴링 주기 (30~60초) 안에 API 의 캐시 동작이 바뀝니다.
-   -->
+   1. 별도 터미널에서 캐시 ON 상태로 트래픽 15건을 흘립니다.
 
-3. **Application Insights** → **Live Metrics** — 토글 OFF 후 1분 안에 `cache.lookup` 의 hit 가 사라지는 모습 실시간 관측
+      ```bash
+      uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 15
+      ```
 
-   <!-- 📸 capture: images/session-05/3c-app-insights-live-metrics-cache-off.png -->
-   <!--
-   ![토글을 끈 직후의 실시간 요청 흐름을 보여 주는 Application Insights Live Metrics 의 Azure Portal 스크린샷](../../images/session-05/3c-app-insights-live-metrics-cache-off.png)
+   2. **Feature manager** 에서 `enable_semantic_cache` 를 **OFF 로 토글** 합니다 (이 화면이 아래 캡쳐 대상).
+   3. 폴링 주기 (30~60초) 만큼 대기한 뒤, 캐시 OFF 상태로 같은 스크립트를 다시 실행해 트래픽 15건을 흘립니다.
 
-   토글 OFF 후 1분 안에 `cache.lookup` 의 hit 가 더 이상 나타나지 않는지 실시간으로 확인합니다.
-   -->
+      ```bash
+      uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 15
+      ```
 
-4. **Key Vault** → **Secrets** — App Configuration 이 reference 하는 secret 이름은 노출, 실제 값은 권한이 있어야 조회
+   4. `enable_semantic_cache` 를 다시 **ON 으로 토글** 해 원상복구합니다.
 
-   <!-- 📸 capture: images/session-05/3d-key-vault-secrets-list.png -->
-   <!--
-   ![Key Vault 의 Secrets 목록에 aoai-endpoint 가 나열된 모습을 보여 주는 Azure Portal 스크린샷](../../images/session-05/3d-key-vault-secrets-list.png)
+   ![Feature manager 의 enable_semantic_cache 피처 플래그 토글을 보여 주는 Azure Portal 스크린샷](images/session-05/3b-app-config-feature-manager-toggle.png)
+
+   `enable_semantic_cache` 와 `enable_pg_backend` 플래그 2개가 나열되는지 확인합니다. 토글을 끄면 폴링 주기 (30~60초) 안에 API 의 캐시 동작이 바뀝니다. 위 ON → 토글 → OFF → 토글 시퀀스가 아래 4번 **Logs** 차트의 절벽 데이터를 만듭니다.
+
+3. **Key Vault** → **Secrets** — App Configuration 이 reference 하는 secret 이름은 노출, 실제 값은 권한이 있어야 조회
+
+   ![Key Vault 의 Secrets 목록에 aoai-endpoint 가 나열된 모습을 보여 주는 Azure Portal 스크린샷](images/session-05/3c-key-vault-secrets-list.png)
 
    App Configuration 이 reference 하는 secret `aoai-endpoint` 의 이름이 목록에 노출되는지 확인합니다. 실제 값은 **Key Vault Secrets User** 같은 데이터 권한이 있어야 조회됩니다.
-   -->
 
-5. (선택) **Application Insights** → **Logs** 에서 다음 KQL 실행
+4. **Application Insights** → **Logs** 에서 다음 KQL 실행
 
    ```kusto
-   dependencies
+   let win = 40m;
+   let chats = requests
+   | where timestamp > ago(win)
+   | where name == "POST /api/chat"
+   | summarize requests = count() by bin(timestamp, 1m);
+   let lookups = dependencies
+   | where timestamp > ago(win)
    | where name == "cache.lookup"
-   | extend hit = tobool(customDimensions["cache_hit"])
-   | summarize hits=countif(hit==true), total=count() by bin(timestamp, 5m)
-   | extend hit_rate = todouble(hits) / total
+   | summarize lookups = count() by bin(timestamp, 1m);
+   chats
+   | join kind=leftouter lookups on timestamp
+   | project timestamp, requests, lookups = coalesce(lookups, 0)
+   | order by timestamp asc
    | render timechart
    ```
 
-   토글 OFF 직후 `hit_rate` 가 0 으로 내려가는 시점이 시각화됩니다.
+   `requests` (분당 `/api/chat` 호출 수) 와 `cache.lookup` (분당 캐시 조회 수) 두 선을 함께 그립니다. 플래그를 OFF 로 토글하면 코드가 캐시 계층을 건너뛰어 `cache.lookup` 만 0 으로 떨어지지만, `requests` 선은 그대로 유지됩니다 — 같은 트래픽인데 캐시 계층만 사라졌다는 명백한 증거입니다. 다시 ON 으로 토글하면 `cache.lookup` 이 회복됩니다. 두 선을 함께 봐야 **플래그 OFF (캐시 건너뜀)** 와 **트래픽 없음 (idle)** 을 구분할 수 있습니다 — 둘 다 `cache.lookup` 이 0 이지만, 전자는 `requests` 가 유지되고 후자는 `requests` 도 함께 0 입니다.
 
-   <!-- 📸 capture: images/session-05/3e-app-insights-hit-rate-timechart.png -->
-   <!--
-   ![cache.lookup 의 hit_rate 추이를 시간 축 차트로 보여 주는 Application Insights Logs 의 Azure Portal 스크린샷](../../images/session-05/3e-app-insights-hit-rate-timechart.png)
+   ![cache.lookup 의 분당 발생 건수가 플래그 OFF 구간에서 0 으로 떨어지는 절벽을 시간 축 차트로 보여 주는 Application Insights Logs 의 Azure Portal 스크린샷](images/session-05/3d-app-insights-hit-rate-timechart.png)
 
-   토글 OFF 직후 `hit_rate` 가 0 으로 내려가는 시점이 차트에 나타나는지 확인합니다.
-   -->
+   2번에서 만든 ON → OFF → ON 시퀀스에 맞춰, OFF 구간에서 `lookups` 가 0 으로 떨어졌다가 다시 ON 으로 토글하면 0 에서 회복되는 절벽이 차트에 나타나는지 확인합니다.
+
+> [!NOTE]
+> **Live Metrics 는 이 세션에서 캡쳐하지 않습니다** — Live Metrics 는 SDK 기본값으로 켜져 있어 설정 문제는 아니지만, Azure Container Apps 가 트래픽이 없으면 replica 를 0 으로 내리는(scale-to-zero) 특성 때문에 실시간 스트림을 보내는 주체가 사라져 참가자가 재현하기 어렵습니다. 캐시 ON→OFF 효과는 위 **Logs(KQL)** 의 `hit_rate` 타임차트로 영구 데이터로 확인합니다. 관측성 전담 세션인 [session-06](./06-observability.md) 도 Live Metrics 대신 KQL 을 우선하는 같은 방식으로 구성됩니다.
 
 ---
 
