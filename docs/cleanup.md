@@ -127,3 +127,7 @@ az consumption usage list \
 ### "PG soft-delete 가 안 보여요"
 
 - PG Flex 는 soft-delete 가 없습니다. 즉시 삭제. 이름 재사용 가능
+
+### "Cosmos 를 지운 직후 같은 이름으로 다시 배포하면 실패해요"
+
+- Cosmos 계정은 삭제가 백엔드에서 완전히 끝나기 전까지 같은 이름으로 재생성하면 `BadRequest: ... database account ... state is not Online` 으로 실패합니다. 목록·restorable 에서 사라져도 백엔드 정리에 몇 분 더 걸리므로, `az cosmosdb show -n <name> -g rg-ai200ws-dev` 가 NotFound 가 될 때까지 기다린 뒤 재배포합니다 (이름은 `uniqueString(RG)` 기반이라 같은 RG 에서는 동일합니다).
