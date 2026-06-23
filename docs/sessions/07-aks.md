@@ -286,27 +286,45 @@ spec:
       targetPort: 8000
 ```
 
-### 2.3 placeholder 치환 + 배포
+### 2.2 placeholder 치환 + 배포
 
-매니페스트의 `__ACR_LOGIN_SERVER__` · `__UAMI_CLIENT_ID__` · `__AOAI_ENDPOINT__` · `__COSMOS_ENDPOINT__` 를 실제 값으로 치환합니다.
+매니페스트의 `__ACR_LOGIN_SERVER__` · `__UAMI_CLIENT_ID__` · `__AOAI_ENDPOINT__` · `__COSMOS_ENDPOINT__` 를 `az` 로 조회한 실제 값으로 치환합니다. 사용하는 셸에 맞는 블록 하나만 실행합니다. placeholder 가 없는 `service.yaml` · `container-insights-config.yaml` 은 그대로 둡니다.
 
 ```bash
-ACR_LOGIN_SERVER=$(az acr list -g rg-ai200ws-dev --query "[0].loginServer" -o tsv)
-UAMI_CLIENT_ID=$(az identity show -n id-ai200ws-dev -g rg-ai200ws-dev --query clientId -o tsv)
-ACCT=$(az cognitiveservices account list -g rg-ai200ws-dev --query "[0].name" -o tsv)
-AOAI_ENDPOINT=$(az cognitiveservices account show -n $ACCT -g rg-ai200ws-dev --query "properties.endpoint" -o tsv)
-COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
-COSMOS_ENDPOINT=$(az cosmosdb show -n $COSMOS -g rg-ai200ws-dev --query "documentEndpoint" -o tsv)
+# Linux · macOS · WSL
+RG=rg-ai200ws-dev
+ACR_LOGIN_SERVER=$(az acr list -g $RG --query "[0].loginServer" -o tsv)
+UAMI_CLIENT_ID=$(az identity show -n id-ai200ws-dev -g $RG --query clientId -o tsv)
+ACCT=$(az cognitiveservices account list -g $RG --query "[0].name" -o tsv)
+AOAI_ENDPOINT=$(az cognitiveservices account show -n $ACCT -g $RG --query "properties.endpoint" -o tsv)
+COSMOS=$(az cosmosdb list -g $RG --query "[0].name" -o tsv)
+COSMOS_ENDPOINT=$(az cosmosdb show -n $COSMOS -g $RG --query "documentEndpoint" -o tsv)
 
-# 매니페스트의 placeholder 일괄 치환 (Linux · macOS · WSL)
-# container-insights-config.yaml 에는 placeholder 가 없어 치환 대상에 포함돼도 변화가 없습니다.
-sed -i \
-  -e "s|__ACR_LOGIN_SERVER__|$ACR_LOGIN_SERVER|g" \
-  -e "s|__UAMI_CLIENT_ID__|$UAMI_CLIENT_ID|g" \
-  -e "s|__AOAI_ENDPOINT__|$AOAI_ENDPOINT|g" \
-  -e "s|__COSMOS_ENDPOINT__|$COSMOS_ENDPOINT|g" \
+# sed -i 는 GNU(Linux)·BSD(macOS) 동작이 달라, 두 OS 에서 동일한 perl 로 제자리 치환 (perl 은 기본 탑재).
+perl -i -pe "s|__ACR_LOGIN_SERVER__|$ACR_LOGIN_SERVER|g; s|__UAMI_CLIENT_ID__|$UAMI_CLIENT_ID|g; s|__AOAI_ENDPOINT__|$AOAI_ENDPOINT|g; s|__COSMOS_ENDPOINT__|$COSMOS_ENDPOINT|g" \
   infra/sessions/07-aks/manifests/*.yaml
+```
 
+```powershell
+# Windows PowerShell
+$RG = "rg-ai200ws-dev"
+$ACR_LOGIN_SERVER = az acr list -g $RG --query "[0].loginServer" -o tsv
+$UAMI_CLIENT_ID = az identity show -n id-ai200ws-dev -g $RG --query clientId -o tsv
+$ACCT = az cognitiveservices account list -g $RG --query "[0].name" -o tsv
+$AOAI_ENDPOINT = az cognitiveservices account show -n $ACCT -g $RG --query "properties.endpoint" -o tsv
+$COSMOS = az cosmosdb list -g $RG --query "[0].name" -o tsv
+$COSMOS_ENDPOINT = az cosmosdb show -n $COSMOS -g $RG --query "documentEndpoint" -o tsv
+
+Get-ChildItem infra/sessions/07-aks/manifests/*.yaml | ForEach-Object {
+  (Get-Content $_) `
+    -replace '__ACR_LOGIN_SERVER__', $ACR_LOGIN_SERVER `
+    -replace '__UAMI_CLIENT_ID__', $UAMI_CLIENT_ID `
+    -replace '__AOAI_ENDPOINT__', $AOAI_ENDPOINT `
+    -replace '__COSMOS_ENDPOINT__', $COSMOS_ENDPOINT | Set-Content $_
+}
+```
+
+```bash
 # 적용 — ServiceAccount · ConfigMap · Deployment · Service · Container Insights 에이전트 ConfigMap
 kubectl apply -f infra/sessions/07-aks/manifests/
 ```
