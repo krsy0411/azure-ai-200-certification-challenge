@@ -83,9 +83,11 @@ resource aksUami 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' =
 //       issuer=aks.outputs.oidcIssuerUrl,
 //       subject='system:serviceaccount:${workloadServiceAccount}'.
 
-// -------- 5) 배포 사용자에 Cluster User Role 모듈 호출하기 -------------------
-// 힌트: if (!empty(userObjectId)) 로 role-assignment-aks-cluster-user.bicep
-//       (clusterName=aks.outputs.name, principalId=userObjectId).
+// -------- 5) 배포 사용자에 Cluster User Role + RBAC Cluster Admin 모듈 호출하기 ---
+// 힌트: 둘 다 if (!empty(userObjectId)) 조건부, clusterName=aks.outputs.name, principalId=userObjectId.
+//       role-assignment-aks-cluster-user.bicep — kubeconfig 다운로드용 Cluster User Role.
+//       role-assignment-aks-rbac-admin.bicep   — enableAzureRBAC=true 라 kubectl get/apply
+//                                                 데이터플레인 권한이 별도로 필요 (없으면 Forbidden).
 
 // -------- 출력 -----------------------------------------------------------------
 // 힌트: aksName, oidcIssuerUrl(aks.outputs.oidcIssuerUrl), acrName.

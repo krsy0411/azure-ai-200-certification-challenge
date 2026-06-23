@@ -27,13 +27,13 @@ Copy-Item -Path save-points/session-07/start/* -Destination workshop -Recurse -F
 
 이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
 
-학습자가 채우는 파일은 세 개입니다 — `infra/sessions/07-aks/main.bicep` (모듈 조립), `manifests/deployment.yaml` · `manifests/service.yaml` (K8s 매니페스트). 모듈 7개와 ServiceAccount · ConfigMap 매니페스트는 완성되어 제공됩니다. apps/api 는 [session-01](./01-rag-mvp.md) 이미지를 그대로 재사용하므로 앱 코드 변경은 없습니다.
+학습자가 채우는 파일은 세 개입니다 — `infra/sessions/07-aks/main.bicep` (모듈 조립), `infra/sessions/07-aks/manifests/deployment.yaml` · `infra/sessions/07-aks/manifests/service.yaml` (K8s 매니페스트). apps/api 는 [session-01](./01-rag-mvp.md) 이미지를 그대로 재사용하므로 앱 코드 변경은 없습니다.
 
 ---
 
-## 1단계 · 프로비저닝
+## 1 단계 : 프로비저닝
 
-`workshop/infra/sessions/07-aks/main.bicep` 을 열고, 그룹별 주석을 찾아 코드를 채웁니다. `aksUami`(AKS 전용 User Assigned Managed Identity) 자원은 이미 제공됩니다.
+`workshop/infra/sessions/07-aks/main.bicep` 을 열고, 그룹별 주석을 찾아 코드를 채웁니다.
 
 ### 1.1 호출할 모듈 한눈에 보기
 
@@ -47,12 +47,13 @@ infra/modules/session-07/
 ├── federated-identity-credential.bicep  # 워크로드 SA ↔ session-00 User Assigned Managed Identity 신뢰 연결
 ├── role-assignment-acrpull.bicep        # AKS UAMI 에 AcrPull
 ├── role-assignment-mi-operator.bicep    # AKS UAMI 에 Managed Identity Operator
-└── role-assignment-aks-cluster-user.bicep # 본인 계정에 Cluster User Role
+├── role-assignment-aks-cluster-user.bicep # 본인 계정에 Cluster User Role (kubeconfig 다운로드)
+└── role-assignment-aks-rbac-admin.bicep   # 본인 계정에 RBAC Cluster Admin (kubectl 데이터플레인)
 ```
 
 ### 1.2 역할 + AKS 클러스터
 
-`// -------- 1) ...` 과 `// -------- 2) ...` 주석 아래에 채웁니다. AKS User Assigned Managed Identity 는 ACR pull(`AcrPull`)과 자기 자신에 대한 `Managed Identity Operator`(control plane 이 kubelet identity 를 노드에 할당) 가 클러스터 생성 전에 부여돼야 합니다.
+`main.bicep` 의 `// -------- 1) 역할 — AKS UAMI 에 AcrPull + Managed Identity Operator 모듈 호출하기` 주석 아래에 `acrPull` · `miOperator` 두 모듈을 추가합니다.
 
 ```bicep
 module acrPull '../../modules/session-07/role-assignment-acrpull.bicep' = {
@@ -70,7 +71,11 @@ module miOperator '../../modules/session-07/role-assignment-mi-operator.bicep' =
     principalId: aksUami.properties.principalId
   }
 }
+```
 
+`main.bicep` 의 `// -------- 2) AKS 클러스터 모듈 호출하기` 주석 아래에 `aks` 모듈을 추가합니다.
+
+```bicep
 module aks '../../modules/session-07/aks-cluster.bicep' = {
   name: 'aks'
   params: {
@@ -91,7 +96,7 @@ module aks '../../modules/session-07/aks-cluster.bicep' = {
 
 ### 1.3 Container Insights (DCR + DCRA)
 
-`// -------- 3) ...` 주석 아래에 채웁니다. `addonProfiles.omsagent` 단독으로는 데이터가 흐르지 않으므로 DCR + DCRA 를 명시 선언합니다. DCR 에는 `enableContainerLogV2=true` 를 두지만, 실제 `ContainerLogV2` 스키마 전환은 [2.3](#23-placeholder-치환--배포) 에서 적용하는 에이전트 ConfigMap(`container-insights-config.yaml`) 이 담당합니다.
+`main.bicep` 의 `// -------- 3) Container Insights — DCR + DCRA 모듈 호출하기` 주석 아래에 `dcr` · `dcra` 두 모듈을 추가합니다.
 
 ```bicep
 module dcr '../../modules/session-07/aks-container-insights-dcr.bicep' = {
@@ -115,7 +120,7 @@ module dcra '../../modules/session-07/aks-container-insights-dcra.bicep' = {
 
 ### 1.4 Workload Identity + Cluster User Role + RBAC Cluster Admin + 출력
 
-`// -------- 4) ...` · `// -------- 5) ...` · `// -------- 출력` 주석 아래에 채웁니다. 클러스터가 `enableAzureRBAC=true` 라 Cluster User Role(kubeconfig 다운로드)만으론 `kubectl get/apply` 가 `Forbidden` 이므로 **RBAC Cluster Admin** 도 함께 부여합니다.
+`main.bicep` 의 `// -------- 4) 워크로드 federated identity credential 모듈 호출하기` 주석 아래에 `fic` 모듈을 추가합니다.
 
 ```bicep
 module fic '../../modules/session-07/federated-identity-credential.bicep' = {
@@ -127,7 +132,11 @@ module fic '../../modules/session-07/federated-identity-credential.bicep' = {
     subject: 'system:serviceaccount:${workloadServiceAccount}'
   }
 }
+```
 
+`main.bicep` 의 `// -------- 5) 배포 사용자에 Cluster User Role + RBAC Cluster Admin 모듈 호출하기` 주석 아래에 `clusterUser` · `clusterRbacAdmin` 두 모듈을 추가합니다.
+
+```bicep
 module clusterUser '../../modules/session-07/role-assignment-aks-cluster-user.bicep' = if (!empty(userObjectId)) {
   name: 'clusterUser-user'
   params: {
@@ -146,6 +155,8 @@ module clusterRbacAdmin '../../modules/session-07/role-assignment-aks-rbac-admin
   }
 }
 ```
+
+`main.bicep` 의  `// -------- 출력` 주석 아래에 출력 3개를 추가합니다.
 
 ```bicep
 output aksName string = aks.outputs.name
@@ -174,10 +185,7 @@ az deployment group create \
 ```
 
 > [!NOTE]
-> AKS 클러스터 생성에 약 **8~12분** 소요됩니다. 진행되는 동안 [2단계 · 복붙으로 경험해보기](#2단계--복붙으로-경험해보기) 의 트레이드오프 박스와 매니페스트를 정독합니다.
-
-> [!CAUTION]
-> **비용 안내** — AKS Load Balancer + Public IP 가 idle 상태에서도 약 ₩1,125/일 발생합니다. 본 세션 학습이 끝나면 [자원 정리](../cleanup.md) 로 즉시 정리하는 것을 권장합니다.
+> AKS 클러스터 생성에 약 **8~12분** 소요됩니다.
 
 ### 1.6 배포 확인 + kubeconfig
 
@@ -194,28 +202,13 @@ kubectl get nodes
 
 ---
 
-## 2단계 · 복붙으로 경험해보기
+## 2 단계 : 복붙으로 경험해보기
 
-### 2.1 Azure Container Apps 와 Azure Kubernetes Service 트레이드오프
+### 2.1 매니페스트 작성
 
-| 차원 | Azure Container Apps ([session-01](./01-rag-mvp.md)) | Azure Kubernetes Service (본 세션) |
-|---|---|---|
-| **추상화 수준** | 컨테이너만 다룸 — K8s 내부 숨김 | 풀 K8s API 노출 |
-| **세팅 비용** | 거의 0 | 클러스터 운영 학습 곡선 |
-| **자동 스케일** | KEDA 내장 | HPA · VPA · KEDA 별도 설정 |
-| **idle 비용** | min replica 0 가능 (사실상 0) | Load Balancer + Public IP 최소 ~$1/일 |
-| **mTLS · sidecar · CRD** | 제한적 (Dapr 통해서만) | 완전 자유 |
-| **GPU · 특수 노드 풀** | 미지원 | 지원 |
-| **언제 사용하면 좋은가** | 표준 마이크로서비스 · REST · gRPC | 복잡한 시스템 (service mesh · CRD · GPU · multi-tenant) |
+`infra/sessions/07-aks/manifests/` 의 `deployment.yaml` 와 `service.yaml` 가 stub 으로 비어 있습니다 — 아래 내용으로 채웁니다. 같은 폴더의 `serviceaccount.yaml` · `configmap.yaml` · `container-insights-config.yaml` 은 제공됩니다. apps/api 이미지를 그대로 올리되, **Workload Identity** label 로 파드가 시크릿 없이 Azure 자원에 접근하게 합니다.
 
-> [!TIP]
-> **시험 단골 패턴** — "Azure Container Apps vs Azure Kubernetes Service" 는 **추상화** 와 **제어** 의 트레이드오프입니다. K8s 의 모든 기능이 필요하지 않다면 Azure Container Apps 가 운영 부담이 훨씬 낮습니다. 같은 RAG API 라도 두 호스트에 올려보면 차이가 분명해집니다.
-
-### 2.2 매니페스트 작성
-
-`manifests/deployment.yaml` 와 `manifests/service.yaml` 가 비어 있습니다. ServiceAccount(`serviceaccount.yaml`)·ConfigMap(`configmap.yaml`)은 제공됩니다. apps/api 이미지를 그대로 올리되, **Workload Identity** label 로 파드가 시크릿 없이 Azure 자원에 접근하게 합니다.
-
-`deployment.yaml`
+`infra/sessions/07-aks/manifests/deployment.yaml`
 
 ```yaml
 apiVersion: apps/v1
@@ -269,7 +262,7 @@ spec:
               memory: 1Gi
 ```
 
-`service.yaml`
+`infra/sessions/07-aks/manifests/service.yaml`
 
 ```yaml
 apiVersion: v1
@@ -342,7 +335,7 @@ kubectl get pods -l app=apps-api
 kubectl get service apps-api -w   # EXTERNAL-IP 가 <pending> → IP 로 바뀌면 Ctrl+C
 ```
 
-### 2.4 호출 테스트
+### 2.3 호출 테스트
 
 ```bash
 LB_IP=$(kubectl get service apps-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -356,7 +349,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
 ---
 
-## 3단계 · Azure Portal UI 에서 확인
+## 3 단계 : Azure Portal UI 에서 확인
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
@@ -370,7 +363,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
    ![apps-api Service 에 External IP 가 할당된 Services and ingresses 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3b-aks-service-external-ip.png)
 
-   `apps-api` Service 의 Type 이 **Load balancer** 이고, External IP 가 [2.4 호출 테스트](#24-호출-테스트) 에서 사용한 `LB_IP` 와 같은 값인지 확인합니다.
+   `apps-api` Service 의 Type 이 **Load balancer** 이고, External IP 가 [2.3 호출 테스트](#23-호출-테스트) 에서 사용한 `LB_IP` 와 같은 값인지 확인합니다.
 
 3. **AKS** → **Insights** → 노드 · Pod 메트릭 (Container Insights 동작 증거)
 
@@ -388,28 +381,13 @@ curl -sX POST "http://$LB_IP/api/chat" \
    ```
 
    > [!NOTE]
-   > `ContainerLogV2` 는 [2.3 placeholder 치환 + 배포](#23-placeholder-치환--배포) 에서 적용한 `container-insights-config.yaml` 과 에이전트 재시작 이후 몇 분(첫 수집까지 약 5~15분) 지나야 채워집니다. 재배포 직후 즉시 조회하면 빈 결과일 수 있으므로 잠시 기다린 뒤 다시 실행합니다.
+   > `ContainerLogV2` 는 [2.2 placeholder 치환 + 배포](#22-placeholder-치환--배포) 에서 적용한 `container-insights-config.yaml` 과 에이전트 재시작 이후 몇 분(첫 수집까지 약 5~15분) 지나야 채워집니다. 재배포 직후 즉시 조회하면 빈 결과일 수 있으므로 잠시 기다린 뒤 다시 실행합니다.
 
    ![ContainerLogV2 테이블 KQL 결과로 api 컨테이너 로그가 조회된 Logs 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3d-aks-logs-containerlogv2.png)
 
    쿼리 결과에 `api` 컨테이너의 최근 로그 행이 표시되는지 확인합니다. 행이 비어 있다면 `container-insights-config.yaml` 적용·에이전트 재시작 이후 수집이 시작되기까지 몇 분 기다렸는지, 또는 로그가 레거시 `ContainerLog` 테이블로 흘러가고 있지 않은지 확인합니다.
 
 5. (검증) `kubectl logs -l app=apps-api --tail=50` — Workload Identity 로 Azure OpenAI · Cosmos 호출이 성공하는지 (인증 오류 없이 RAG 응답)
-
----
-
-## Microsoft Learn 경로 커버리지 — 사용 / 생략
-
-[Deploy and monitor apps on Azure Kubernetes Service](https://learn.microsoft.com/ko-kr/training/paths/deploy-monitor-apps-azure-kubernetes-service/) 학습 경로 3개 모듈을 본 세션에서 어떻게 다루는지 정리합니다.
-
-| 모듈 | 단원 핵심 | 본 세션 |
-|---|---|---|
-| **1. AKS 에 애플리케이션 배포** | Deployment manifest · Service(LoadBalancer) 노출 · kubectl apply | **사용** — apps/api Deployment + LoadBalancer Service (2.2~2.4) |
-| **2. AKS 에서 애플리케이션 구성** | ConfigMap · Secret · PersistentVolume | **부분/변형** — 비민감 설정은 ConfigMap. 자격증명은 K8s Secret 대신 **Workload Identity**(학습 경로 초과). PersistentVolume 은 상태가 Cosmos DB 라 **생략** |
-| **3. AKS 모니터링·문제 해결** | Container Insights · kubectl logs/describe/top · 연결 확인 | **사용** — Container Insights(DCR+DCRA) + `kubectl logs` + ContainerLogV2(3단계). 의도적 장애 주입 연습은 생략 |
-
-> [!NOTE]
-> **본 저장소 확장** — Workload Identity(federated User Assigned Managed Identity)·Container Insights DCR/DCRA·`AcrPull` IaC 부여는 학습 경로 본문 범위를 넘어서는 실전 패턴입니다. 학습 경로의 K8s Secret 대신 본 챌린지 표준(Entra ID + DefaultAzureCredential)을 일관되게 적용했습니다.
 
 ---
 

@@ -1,0 +1,25 @@
+# Container Insights 에이전트 설정 — 컨테이너 stdout/stderr 로그를 신규 ContainerLogV2
+# 스키마로 수집한다. 이 ConfigMap 이 없으면 로그가 레거시 ContainerLog 테이블로 흘러가
+# docs §3 의 ContainerLogV2 KQL 이 빈 결과로 보인다 (DCR 의 enableContainerLogV2 설정만으로는
+# 이 에이전트 버전에서 V2 전환이 일어나지 않는다 — containerlog_schema_version=v2 가 실제 스위치).
+# 적용 후 ama-logs 에이전트가 재시작/폴링으로 설정을 반영하기까지 몇 분 걸린다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: container-azm-ms-agentconfig
+  namespace: kube-system
+data:
+  schema-version: v1
+  config-version: ver1
+  log-data-collection-settings: |-
+    [log_collection_settings]
+       [log_collection_settings.stdout]
+          enabled = true
+          exclude_namespaces = ["kube-system","gatekeeper-system"]
+       [log_collection_settings.stderr]
+          enabled = true
+          exclude_namespaces = ["kube-system","gatekeeper-system"]
+       [log_collection_settings.schema]
+          containerlog_schema_version = "v2"
+       [log_collection_settings.enrich_container_logs]
+          enabled = true
