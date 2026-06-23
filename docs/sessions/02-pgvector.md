@@ -26,11 +26,11 @@ Copy-Item -Path save-points/session-02/start/* -Destination workshop -Recurse -F
 
 이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
 
-시작본에서 학습자가 채우는 파일은 세 개입니다 — `infra/sessions/02-pgvector/main.bicep` (모듈 조립), `apps/api/src/stores/pg_store.py` (PostgreSQL 스토어 구현), `scripts/seed_both.py` (비교 측정). 나머지 (모듈 5개 · `VectorStore` 추상화 · 백엔드 분기 방법) 는 완성되어 제공됩니다.
+시작본에서 학습자가 채우는 파일은 세 개입니다 : `infra/sessions/02-pgvector/main.bicep` (모듈 조립), `apps/api/src/stores/pg_store.py` (PostgreSQL 스토어 구현), `scripts/seed_both.py` (비교 측정). 나머지는 완성되어 제공됩니다.
 
 ---
 
-## 1단계 · PostgreSQL 프로비저닝
+## 1 단계 : PostgreSQL 프로비저닝
 
 `workshop/infra/sessions/02-pgvector/main.bicep` 을 열고, 아래 순서대로 각 주석을 찾아 바로 아래에 코드를 추가합니다.
 
@@ -234,7 +234,7 @@ az postgres flexible-server show \
 
 ---
 
-## 2단계 · 복붙으로 경험해보기
+## 2 단계 : 복붙으로 경험해보기
 
 ### 2.1 PostgreSQL 데이터베이스 초기화
 
@@ -377,7 +377,7 @@ uv run --project apps/api python scripts/seed_both.py
 
 ---
 
-## 3단계 · Azure Portal · psql 로 확인
+## 3 단계 : Azure Portal · psql 로 확인
 
 1·2번은 [Azure Portal](https://portal.azure.com) 에서, 3번은 psql 터미널에서 확인합니다.
 
@@ -423,21 +423,6 @@ uv run --project apps/api python scripts/seed_both.py
    ```
 
    실행 계획에 `Seq Scan on chunks` 가 보이는데, 이는 본 챌린지 데이터가 120 건으로 작아 플래너가 HNSW 인덱스 대신 순차 스캔 (정확 검색) 을 고른 것이며 정상입니다 ([2.3](#23-비교-실행) 의 TIP · [함정 모음](../pitfalls/common.md) 참고). 데이터가 커지거나 같은 세션에서 `SET LOCAL enable_seqscan = off` 로 순차 스캔을 강제하면 `Index Scan using chunks_embedding_hnsw` 가 실행 계획에 나타납니다.
-
----
-
-## Microsoft Learn 경로 커버리지 — 사용 / 생략
-
-[Develop AI solutions with Azure Database for PostgreSQL](https://learn.microsoft.com/ko-kr/training/paths/develop-ai-solutions-azure-database-postgresql/) 학습 경로 3개 모듈을 본 세션에서 어떻게 다루는지 정리합니다.
-
-| 모듈 | 단원 핵심 | 본 세션 |
-|---|---|---|
-| **1. 빌드 및 쿼리** | Azure Database for PostgreSQL 살펴보기 · Microsoft Entra 인증 + TLS 연결 · 스키마 / 인덱스 · 효율적 쿼리 · psycopg 통합 | **사용** — Entra 전용 인증, `psql` 연결, `chunks` 스키마, psycopg 통합 (1단계 · 2.1 · 2.2) |
-| **2. 벡터 검색 구현** | pgvector 로 임베딩 저장 / 쿼리 · 거리 연산자 (`<=>` / `<->` / `<#>`) · 인덱스 수명 주기 · 의미 체계 검색 · RAG 검색 패턴 | **사용** — `halfvec(3072)` + `<=>` (cosine) + HNSW, RAG 검색 (2.1 · 2.2) |
-| **3. 벡터 검색 최적화** | pgvector 튜닝 (`hnsw.ef_search` 등) · 인덱스 선택 (HNSW vs IVFFlat vs DiskANN) · 데이터 레이아웃 · 대용량 스케일링 · 연결 최적화 (PgBouncer vs psycopg_pool) | **일부 사용** — `hnsw.ef_search` 튜닝 (2.3), Burstable 의 PgBouncer 미지원 → `psycopg_pool` (2.2). **생략** — IVFFlat / DiskANN 비교, 대용량 스케일링 (read replica · vCore 확장) 은 소규모 학습 범위라 학습 경로 참조로 대체 |
-
-> [!NOTE]
-> **학습 경로보다 더 깊이 다루는 부분** — `halfvec(3072)` (vector 의 2000 차원 한계 회피), Burstable 의 PgBouncer 미지원, `register_vector_async` chicken-and-egg, 자식 자원 직렬화는 학습 경로 본문에 없는 실전 함정으로, 본 세션이 실측으로 보강합니다.
 
 ---
 

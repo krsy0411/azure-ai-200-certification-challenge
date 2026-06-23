@@ -34,7 +34,7 @@ Copy-Item -Path save-points/session-01/start/* -Destination workshop -Recurse -F
 
 ---
 
-## 1단계 · Bicep 모듈 조립
+## 1 단계 : Bicep 모듈 조립
 
 `workshop/infra/sessions/01-rag-mvp/main.bicep` 을 열고, 아래 순서대로 각 힌트 주석을 찾아 그 자리를 코드로 교체합니다. 모듈은 위에서부터 아래로 의존 관계를 따라 이어지므로 순서대로 채우는 것을 권장합니다.
 
@@ -192,7 +192,7 @@ module kvSecretsRoleUami '../../modules/session-01/role-assignment-keyvault-secr
 
 ### 1.7 (필수) 사용자 계정에도 Cosmos data plane · Key Vault Secrets 부여
 
-`// -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 모듈 호출하기` 힌트 주석을 찾아 다음 두 모듈로 교체합니다. 이 블록은 **본인 계정**에 Cosmos 데이터플레인 (`Cosmos DB Built-in Data Contributor`) 권한을 부여합니다. [4단계 · Cosmos 시드](#4단계--cosmos-시드) 가 본인 `az login` 자격으로 Cosmos 에 쓰고 6단계 Data Explorer 도 같은 권한을 요구하므로 **필수**이며, 그래서 표준 배포 (3단계) 가 항상 `userObjectId` 를 넘깁니다. Bicep 의 `if (!empty(userObjectId))` 는 값을 안 넘기면 건너뛰는 조건부 모듈일 뿐이니, 워크샵에서는 반드시 채워 배포합니다. (함께 부여되는 Key Vault Secrets 권한은 본인이 시크릿을 직접 읽어볼 때만 쓰는 보너스입니다.) 사용자 계정이므로 `principalType` 은 `User` 입니다.
+`// -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 모듈 호출하기` 힌트 주석을 찾아 다음 두 모듈로 교체합니다. 이 블록은 **본인 계정**에 Cosmos 데이터플레인 (`Cosmos DB Built-in Data Contributor`) 권한을 부여합니다. [4 단계 : Cosmos 시드](#4-단계--cosmos-시드) 가 본인 `az login` 자격으로 Cosmos 에 쓰고 6단계 Data Explorer 도 같은 권한을 요구하므로 **필수**이며, 그래서 표준 배포 (3단계) 가 항상 `userObjectId` 를 넘깁니다. Bicep 의 `if (!empty(userObjectId))` 는 값을 안 넘기면 건너뛰는 조건부 모듈일 뿐이니, 워크샵에서는 반드시 채워 배포합니다. (함께 부여되는 Key Vault Secrets 권한은 본인이 시크릿을 직접 읽어볼 때만 쓰는 보너스입니다.) 사용자 계정이므로 `principalType` 은 `User` 입니다.
 
 ```bicep
 // -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 -----------
@@ -219,7 +219,7 @@ module kvSecretsRoleUser '../../modules/session-01/role-assignment-keyvault-secr
 
 `// -------- 7) Azure Container Apps — FastAPI (ca-api) 모듈 호출하기` 힌트 주석을 찾아 다음으로 교체합니다. 이 Container App 이 RAG 백엔드입니다. `envVars` 로 Azure OpenAI · Cosmos · Application Insights 연결 정보를 주입하고, `dependsOn` 에 1.6 의 RBAC 모듈 3개를 명시해 Container App 이 시작하기 전에 역할 부여가 끝나도록 보장합니다.
 
-`containerImage` 는 `empty(apiImageTag) ? '' : 'api:${apiImageTag}'` 로 전달합니다. `main.bicepparam` 의 `apiImageTag` 기본값이 빈 문자열이므로, 첫 배포에서는 빈 이미지가 넘어가 `container-app.bicep` 이 placeholder 이미지로 Container App 을 만듭니다. 실제 `api` 이미지는 [5단계 · 빌드 · 배포 · 호출](#5단계--빌드--배포--호출) 에서 빌드 · push 한 뒤 `az containerapp update --image` 로 교체합니다.
+`containerImage` 는 `empty(apiImageTag) ? '' : 'api:${apiImageTag}'` 로 전달합니다. `main.bicepparam` 의 `apiImageTag` 기본값이 빈 문자열이므로, 첫 배포에서는 빈 이미지가 넘어가 `container-app.bicep` 이 placeholder 이미지로 Container App 을 만듭니다. 실제 `api` 이미지는 [5 단계 : 빌드 · 배포 · 호출](#5-단계--빌드--배포--호출) 에서 빌드 · push 한 뒤 `az containerapp update --image` 로 교체합니다.
 
 ```bicep
 // -------- 7) Azure Container Apps — FastAPI (ca-api) ----------------------------
@@ -362,7 +362,7 @@ az bicep build --file infra/sessions/01-rag-mvp/main.bicep --stdout > /dev/null 
 
 ---
 
-## 2단계 · 앱 코드 채우기
+## 2 단계 : 앱 코드 채우기
 
 Bicep 조립과 별개로, FastAPI 백엔드의 RAG 파이프라인 빈칸을 완성본 기준으로 채웁니다. 먼저 본 챌린지가 왜 `.env` 가 아니라 Key Vault + Managed Identity 를 쓰는지 짚고, 그 원칙이 코드로 어떻게 표현되는지 따라갑니다.
 
@@ -775,7 +775,7 @@ setResponse(data);
 
 ---
 
-## 3단계 · Bicep 배포
+## 3 단계 : Bicep 배포
 
 ### 3.1 변경사항 미리보기
 
@@ -803,12 +803,12 @@ az deployment group create \
 ```
 
 > [!NOTE]
-> Cosmos DB account 생성이 가장 오래 걸려 약 **8~10분** 소요됩니다. 진행되는 동안 [4단계 · Cosmos 시드](#4단계--cosmos-시드) 의 환경변수 구성과 실행 명령을 미리 정독합니다.
+> Cosmos DB account 생성이 가장 오래 걸려 약 **8~10분** 소요됩니다.
 
 > [!NOTE]
 > **placeholder revision 이 `ActivationFailed` 로 보여도 정상**
 >
-> 배포 직후 두 Container App 은 아직 자체 이미지가 없어 placeholder 이미지 (`mcr.microsoft.com/k8se/quickstart:latest`) 로 생성됩니다. 이 placeholder 이미지는 본 챌린지가 지정한 포트 (api 8000 · web 3000) 를 듣지 않으므로 첫 revision 이 `ActivationFailed` 로 표시될 수 있습니다. deployment 자체는 `Succeeded` 이며, [5단계 · 빌드 · 배포 · 호출](#5단계--빌드--배포--호출) 의 `az containerapp update --image` 로 실제 이미지를 올리면 새 revision 이 `Healthy` 가 됩니다. 배포 실패로 오해하지 않습니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).
+> 배포 직후 두 Container App 은 아직 자체 이미지가 없어 placeholder 이미지 (`mcr.microsoft.com/k8se/quickstart:latest`) 로 생성됩니다. 이 placeholder 이미지는 본 챌린지가 지정한 포트 (api 8000 · web 3000) 를 듣지 않으므로 첫 revision 이 `ActivationFailed` 로 표시될 수 있습니다. deployment 자체는 `Succeeded` 이며, [5 단계 : 빌드 · 배포 · 호출](#5-단계--빌드--배포--호출) 의 `az containerapp update --image` 로 실제 이미지를 올리면 새 revision 이 `Healthy` 가 됩니다. 배포 실패로 오해하지 않습니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).
 
 ### 3.3 배포 완료 확인
 
@@ -846,7 +846,7 @@ Cosmos DB 와 Azure Container Apps Environment 양쪽 모두 `Succeeded` 인지 
 
 ---
 
-## 4단계 · Cosmos 시드
+## 4 단계 : Cosmos 시드
 
 배포가 끝났어도 `chunks` 컨테이너는 비어 있습니다. RAG 가 의미 있는 답변을 내려면 검색 대상이 되는 chunk 가 먼저 적재되어야 합니다. 완성본으로 제공되는 `scripts/seed_cosmos.py` 가 학습용 사내 문서 약 120건을 만들어 `text-embedding-3-large` 로 임베딩하고 Cosmos `chunks` 컨테이너에 적재합니다.
 
@@ -906,7 +906,7 @@ az cosmosdb sql container show \
 
 ---
 
-## 5단계 · 빌드 · 배포 · 호출
+## 5 단계 : 빌드 · 배포 · 호출
 
 앱 코드를 채웠으니, 컨테이너 이미지를 빌드해 Azure Container Registry 에 push 하고 Container App revision 을 갱신한 뒤 호출합니다. 3단계 배포에서 두 Container App 은 placeholder 이미지로 만들어졌으므로, 아래 4) 의 `az containerapp update --image` 가 placeholder 를 방금 push 한 실제 이미지로 교체하면서 새 revision 을 띄웁니다.
 
@@ -968,7 +968,7 @@ curl -X POST "https://$API_FQDN/api/chat" \
 }
 ```
 
-`answer` 에 시드된 문서를 근거로 한 답변이, `sources` 에 검색된 chunk 목록이 채워졌는지 확인합니다. `sources` 가 빈 배열이고 `answer` 가 "관련 문서를 찾을 수 없습니다." 라면 시드가 안 됐거나 벡터 인덱스 빌드가 끝나지 않은 상태이므로 [4단계 · Cosmos 시드](#4단계--cosmos-시드) 를 다시 확인합니다.
+`answer` 에 시드된 문서를 근거로 한 답변이, `sources` 에 검색된 chunk 목록이 채워졌는지 확인합니다. `sources` 가 빈 배열이고 `answer` 가 "관련 문서를 찾을 수 없습니다." 라면 시드가 안 됐거나 벡터 인덱스 빌드가 끝나지 않은 상태이므로 [4 단계 : Cosmos 시드](#4-단계--cosmos-시드) 를 다시 확인합니다.
 
 > [!NOTE]
 > **질문이 코퍼스와 동떨어지면 "관련 문서를 찾을 수 없습니다" 가 정상** — 시드된 코퍼스는 휴가 · 보안 · 근태 · 복지 · 장비의 신청 절차 위주이므로, 코퍼스에 근거가 없는 질문에는 gpt-5-mini 가 지어내지 않고 정직하게 `관련 문서를 찾을 수 없습니다` 를 반환합니다. 이는 환각을 막는 RAG 의 정상 동작입니다. 답변을 받고 싶다면 `노트북을 분실하면 어떻게 신고해?` 처럼 코퍼스 항목 (`[보안] 노트북 분실 신고`) 과 맞는 질문을 사용합니다.
@@ -978,7 +978,7 @@ curl -X POST "https://$API_FQDN/api/chat" \
 
 ---
 
-## 6단계 · Azure Portal UI 에서 확인
+## 6 단계 : Azure Portal UI 에서 확인
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 

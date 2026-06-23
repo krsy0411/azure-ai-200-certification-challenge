@@ -28,11 +28,11 @@ Copy-Item -Path save-points/session-00/start/* -Destination workshop -Recurse -F
 
 이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
 
-시작본의 `infra/sessions/00-setup/main.bicep` 을 열어보면, 파라미터·공용 태그·자원 이름 변수는 이미 채워져 있고 **8개 모듈 호출 블록과 출력 블록이 한국어 주석으로 비어 있습니다**. 호출할 모듈 본체 (`infra/modules/session-00/*.bicep`) 는 완성되어 있으므로 수정하지 않습니다. [2단계 · Bicep 모듈 조립](#2단계--bicep-모듈-조립) 에서 이 빈 블록을 순서대로 채웁니다.
+시작본의 `infra/sessions/00-setup/main.bicep` 을 열어보면, 파라미터·공용 태그·자원 이름 변수는 이미 채워져 있고 **8개 모듈 호출 블록과 출력 블록이 한국어 주석으로 비어 있습니다**. 호출할 모듈 본체 (`infra/modules/session-00/*.bicep`) 는 완성되어 있으므로 수정하지 않습니다. [2 단계 : Bicep 모듈 조립](#2-단계--bicep-모듈-조립) 에서 이 빈 블록을 순서대로 채웁니다.
 
 ---
 
-## 1단계 · 도구 점검
+## 1 단계 : 도구 점검
 
 ### 1.1 환경 점검
 
@@ -122,7 +122,7 @@ az ad signed-in-user show --query id -o tsv
 
 ---
 
-## 2단계 · Bicep 모듈 조립
+## 2 단계 : Bicep 모듈 조립
 
 `workshop/infra/sessions/00-setup/main.bicep` 을 열고, 아래 순서대로 각 주석을 찾아 바로 아래에 코드를 추가합니다. 모듈은 위에서부터 아래로 의존 관계를 따라 이어지므로 순서대로 채우는 것을 권장합니다.
 
@@ -363,7 +363,7 @@ az bicep build --file infra/sessions/00-setup/main.bicep --stdout > /dev/null &&
 
 ---
 
-## 3단계 · Bicep 배포
+## 3 단계 : Bicep 배포
 
 ### 3.1 변경사항 미리보기
 
@@ -390,7 +390,7 @@ az deployment sub create \
 ```
 
 > [!NOTE]
-> Azure OpenAI deployment 두 개를 순차적으로 (하나가 끝난 후 다음 하나를) 만들기 때문에 약 **5~8분** 소요됩니다. 진행되는 동안 [4단계 · Azure Portal UI 에서 확인](#4단계--azure-portal-ui-에서-확인) 의 Portal 경로를 미리 익혀둡니다.
+> Azure OpenAI deployment 두 개를 순차적으로 (하나가 끝난 후 다음 하나를) 만들기 때문에 약 **5~8분** 소요됩니다.
 
 > [!WARNING]
 > Azure OpenAI deployment 를 동시에 생성하면 409 Conflict 가 발생합니다. [2.7 Azure OpenAI deployment 두 개 (순차 생성)](#27-azure-openai-deployment-두-개-순차-생성) 에서 embedding 모듈의 `dependsOn` 에 chat 모듈을 넣었는지 다시 확인합니다.
@@ -423,7 +423,7 @@ text-embedding-3-large     text-embedding-3-large      Standard
 
 ---
 
-## 4단계 · Azure Portal UI 에서 확인
+## 4 단계 : Azure Portal UI 에서 확인
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 

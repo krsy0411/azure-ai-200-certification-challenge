@@ -1,6 +1,6 @@
 # 아키텍처
 
-본 문서는 워크샵을 모두 완주한 시점의 최종 아키텍처를 시각화합니다. 각 세션이 어떤 자원을 추가하는지는 [README.md 의 아젠다](../README.md#하루-일정) 를 참고합니다.
+본 문서는 챌린지를 모두 완주한 시점의 최종 아키텍처를 시각화합니다. 각 세션이 어떤 자원을 추가하는지는 [README 의 챌린지 로드맵](../README.md#챌린지-로드맵) 을 참고합니다.
 
 > [!NOTE]
 > 다이어그램은 [Mermaid](https://mermaid.js.org/) 문법으로 작성됩니다. GitHub 웹 UI 에서 자동 렌더링되며, 로컬 VS Code 에서는 `Markdown Preview Mermaid Support` 확장으로 미리보기를 활성화할 수 있습니다.
@@ -9,7 +9,7 @@
 
 ## 1. 시스템 전체 개요
 
-워크샵 종료 시점의 전체 자원 구성과 의존 관계를 한눈에 보여줍니다.
+챌린지 종료 시점의 전체 자원 구성과 의존 관계를 한눈에 보여줍니다.
 
 ```mermaid
 flowchart TB
@@ -27,7 +27,7 @@ flowchart TB
   end
 
   subgraph Storage[데이터·인덱스 계층]
-    Cosmos[("Cosmos DB<br/>vector container<br/>HNSW · 3072-d")]
+    Cosmos[("Cosmos DB<br/>vector container<br/>quantizedFlat · 3072-d")]
     Pg[("PostgreSQL Flex<br/>pgvector<br/>halfvec(3072) HNSW")]
     Redis[("Managed Redis<br/>RediSearch<br/>시맨틱 캐시")]
   end
@@ -55,7 +55,7 @@ flowchart TB
   subgraph Observability[관측성]
     AppI[("Application Insights")]
     Law[("Log Analytics Workspace")]
-    Wb["Workbook · Metric Alert"]
+    Wb["Workbook · Log Search Alert"]
   end
 
   Browser -- HTTPS --> Web
@@ -154,7 +154,7 @@ flowchart LR
   SBQ[("Service Bus<br/>ingest-queue")] -- "4. queue trigger" --> Func
 
   Func["Function App<br/>on_ingest_message"] -- "5a. Blob 다운로드<br/>(User Assigned Managed Identity)" --> Blob
-  Func -- "5b. 청크 분할<br/>(~500 토큰, overlap 50)" --> Func
+  Func -- "5b. 청크 분할<br/>(~1500자, overlap 200)" --> Func
   Func -- "5c. 배치 임베드" --> AOAI["Azure OpenAI<br/>text-embedding-3-large"]
   Func -- "5d. upsert" --> Cosmos[("Cosmos DB<br/>chunks")]
   Func -- "5d. upsert" --> Pg[("PostgreSQL<br/>chunks")]
@@ -179,13 +179,13 @@ flowchart LR
 ```
 
 > [!WARNING]
-> **lease container 자동 생성 silent fail** — Cosmos change feed trigger 는 lease container 가 없으면 자동 생성을 시도하지만, control plane RBAC 부재 시 silent 실패합니다. 본 워크샵의 Bicep 은 lease container 를 사전 생성합니다 ([docs/pitfalls/common.md](./pitfalls/common.md#cosmos-change-feed-lease-container-silent-fail-session-04) 참고).
+> **lease container 자동 생성 silent fail** — Cosmos change feed trigger 는 lease container 가 없으면 자동 생성을 시도하지만, control plane RBAC 부재 시 silent 실패합니다. 본 챌린지의 Bicep 은 lease container 를 사전 생성합니다 ([docs/pitfalls/common.md](./pitfalls/common.md#cosmos-change-feed-lease-container-silent-fail-session-04) 참고).
 
 ---
 
 ## 4. 인증 · 시크릿 · 설정 흐름
 
-워크샵의 핵심 보안 원칙은 **코드 · 디스크 · git 어디에도 시크릿이 평문으로 존재하지 않음** 입니다. 모든 자원 호출이 Entra ID 토큰 기반으로 동작합니다.
+챌린지의 핵심 보안 원칙은 **코드 · 디스크 · git 어디에도 시크릿이 평문으로 존재하지 않음** 입니다. 모든 자원 호출이 Entra ID 토큰 기반으로 동작합니다.
 
 ```mermaid
 flowchart TD
@@ -211,7 +211,7 @@ flowchart TD
   App -- "토큰 (직접)" --> KV
 
   App -- "토큰" --> SB[("Service Bus<br/>(Data Receiver / Sender)")]
-  App -- "토큰" --> Storage[("Blob Storage<br/>(Blob Data Reader)")]
+  App -- "토큰" --> Storage[("Blob Storage<br/>(Storage Blob Data Owner)")]
   App -- "토큰" --> ACR[("Azure Container Registry<br/>(AcrPull)")]
   App -- "토큰 + Access Policy" --> Redis[("Managed Redis<br/>(Access Policy 별도)")]
 
@@ -240,23 +240,17 @@ flowchart LR
     Web["ca-web<br/>Next.js"]
     Func["Function App"]
     Aks["Azure Kubernetes Service<br/>Container Insights"]
-    Cosmos[("Cosmos DB<br/>Diagnostic Settings")]
-    Pg[("PostgreSQL<br/>Diagnostic Settings")]
-    Redis[("Managed Redis<br/>Diagnostic Settings")]
   end
 
   Api -- "OpenTelemetry<br/>(자동 + 커스텀 span)" --> AppI
   Web -- "OpenTelemetry<br/>(browser)" --> AppI
   Func -- "OpenTelemetry" --> AppI
   Aks -- "DCR + DCRA" --> Law
-  Cosmos -- "Diagnostic logs" --> Law
-  Pg -- "Diagnostic logs" --> Law
-  Redis -- "Diagnostic logs" --> Law
 
   AppI[("Application Insights")] -- "workspace-based" --> Law[("Log Analytics<br/>Workspace")]
 
   Law -- "KQL 쿼리" --> Wb["Workbook<br/>(P95 · cache hit rate · token cost)"]
-  Law -- "Metric Alert<br/>(오류율 > 5%)" --> AG{{"Action Group"}}
+  Law -- "Log Search Alert<br/>(실패 요청 수 > 5 · P95 > 3000ms)" --> AG{{"Action Group"}}
   AG -- "이메일 알림" --> Op(["운영자"])
 
   classDef compute fill:#fff3e0,stroke:#e65100,color:#000
@@ -264,7 +258,7 @@ flowchart LR
   classDef obs fill:#fce4ec,stroke:#ad1457,color:#000
 
   class Api,Web,Func,Aks compute
-  class Cosmos,Pg,Redis,AppI,Law store
+  class AppI,Law store
   class Wb,AG obs
 ```
 
@@ -279,47 +273,47 @@ flowchart LR
 
 | 세션 | 추가 자원 | 역할 |
 |---|---|---|
-| [session-00](./sessions/00-setup.md) | Resource Group · Azure OpenAI · Log Analytics · Application Insights · Key Vault · User Assigned Managed Identity | 워크샵 전체의 기반 |
+| [session-00](./sessions/00-setup.md) | Resource Group · Azure OpenAI · Log Analytics · Application Insights · Key Vault · User Assigned Managed Identity | 챌린지 전체의 기반 |
 | [session-01](./sessions/01-rag-mvp.md) | Azure Container Registry · Azure Container Apps Environment · ca-api · ca-web · Cosmos DB (vector) | RAG MVP 동기 호출 경로 |
 | [session-02](./sessions/02-pgvector.md) | PostgreSQL Flexible Server (pgvector) | 같은 RAG 를 PostgreSQL 백엔드로 비교 |
 | [session-03](./sessions/03-redis-cache.md) | Managed Redis (RediSearch) | 시맨틱 캐시 — 의미 유사 질문 흡수 |
 | [session-04](./sessions/04-async-ingestion.md) | Service Bus · Event Grid · Function App · Storage | 비동기 인제스션 파이프라인 |
 | [session-05](./sessions/05-app-config-flags.md) | App Configuration · Feature flag | 코드 재배포 없이 동작 토글 |
-| [session-06](./sessions/06-observability.md) | Workbook · Action Group · Metric Alert | 관측성 — 비즈니스 의미 span + 알람 |
+| [session-06](./sessions/06-observability.md) | Workbook · Action Group · Log Search Alert | 관측성 — 비즈니스 의미 span + 알람 |
 | [session-07](./sessions/07-aks.md) | Azure Kubernetes Service · Container Insights | Azure Container Apps 대안 — embedding 재처리 워커 |
 
 ---
 
 ## 7. 명명 규칙
 
-표준 형식 — `<리소스약어>-ai200ws-<env>`. 하이픈 금지 자원은 `<약어>ai200ws<env><고유접미사>`.
+표준 형식 — `<리소스약어>-ai200challenge-<env>`. 하이픈 금지 자원은 `<약어>ai200challenge<env><고유접미사>`.
 
 | 자원 종류 | 약어 | 예시 |
 |---|---|---|
-| Resource Group | `rg` | `rg-ai200ws-dev` |
-| Azure OpenAI | `aoai` | `aoai-ai200ws-dev` |
-| Cosmos DB | `cosmos` | `cosmos-ai200ws-dev` |
-| PostgreSQL | `pg` | `pg-ai200ws-dev` |
-| Managed Redis | `redis` | `redis-ai200ws-dev` |
-| Service Bus | `sb` | `sb-ai200ws-dev` |
-| Event Grid 토픽 | `egt` | `egt-ai200ws-dev` |
-| Function App | `func` | `func-ai200ws-dev` |
-| Key Vault | `kv` | `kv-ai200ws-dev` |
-| App Configuration | `ac` | `ac-ai200ws-dev` |
-| Application Insights | `ai` | `ai-ai200ws-dev` |
-| Log Analytics Workspace | `law` | `law-ai200ws-dev` |
-| User Assigned Managed Identity | `id` | `id-ai200ws-dev` |
-| Azure Container Registry | `acr` (하이픈 금지) | `acrai200wsdev<고유접미사>` |
-| Storage Account | `st` (하이픈 금지) | `stai200wsdev<고유접미사>` |
-| Azure Container Apps Environment | `cae` | `cae-ai200ws-dev` |
-| Azure Container Apps Container App | `ca` | `ca-api-ai200ws-dev`, `ca-web-ai200ws-dev` |
-| Azure Kubernetes Service | `aks` | `aks-ai200ws-dev` |
+| Resource Group | `rg` | `rg-ai200challenge-dev` |
+| Azure OpenAI | `aoai` | `aoai-ai200challenge-dev` |
+| Cosmos DB | `cosmos` | `cosmos-ai200challenge-dev` |
+| PostgreSQL | `pg` | `pg-ai200challenge-dev` |
+| Managed Redis | `redis` | `redis-ai200challenge-dev` |
+| Service Bus | `sb` | `sb-ai200challenge-dev` |
+| Event Grid 토픽 | `egt` | `egt-ai200challenge-dev` |
+| Function App | `func` | `func-ai200challenge-dev` |
+| Key Vault | `kv` | `kv-ai200challenge-dev` |
+| App Configuration | `ac` | `ac-ai200challenge-dev` |
+| Application Insights | `ai` | `ai-ai200challenge-dev` |
+| Log Analytics Workspace | `law` | `law-ai200challenge-dev` |
+| User Assigned Managed Identity | `id` | `id-ai200challenge-dev` |
+| Azure Container Registry | `acr` (하이픈 금지) | `acrai200challengedev<고유접미사>` |
+| Storage Account | `st` (하이픈 금지) | `stai200challengedev<고유접미사>` |
+| Azure Container Apps Environment | `cae` | `cae-ai200challenge-dev` |
+| Azure Container Apps Container App | `ca` | `ca-api-ai200challenge-dev`, `ca-web-ai200challenge-dev` |
+| Azure Kubernetes Service | `aks` | `aks-ai200challenge-dev` |
 
 ---
 
 ## 8. User Assigned Managed Identity 의 역할 배정
 
-본 워크샵에서 공용 User Assigned Managed Identity `id-ai200ws-dev` 가 각 자원에 보유해야 하는 역할 목록입니다.
+본 챌린지에서 공용 User Assigned Managed Identity `id-ai200challenge-dev` 가 각 자원에 보유해야 하는 역할 목록입니다.
 
 | 자원 | 역할 | 부여 세션 |
 |---|---|---|
@@ -328,8 +322,8 @@ flowchart LR
 | Key Vault | `Key Vault Secrets User` | session-01 |
 | Azure Container Registry | `AcrPull` | session-01 |
 | App Configuration | `App Configuration Data Reader` | session-05 |
-| Service Bus | `Azure Service Bus Data Receiver` · `Azure Service Bus Data Sender` | session-04 |
-| Event Grid 토픽 | `EventGrid Data Sender` | session-04 |
-| Blob Storage | `Storage Blob Data Reader` (또는 `Contributor`) | session-04 |
+| Service Bus | `Azure Service Bus Data Receiver` (큐 수신) | session-04 |
+| Event Grid System Topic (자체 관리 ID) | `Azure Service Bus Data Sender` (Service Bus 큐로 전달) | session-04 |
+| Blob Storage | `Storage Blob Data Owner` · `Storage Queue Data Contributor` | session-04 |
 | Managed Redis | Access Policy (RBAC 가 아닌 별도 모델) | session-03 |
 | Azure Kubernetes Service (Workload Identity) | Federated Credential (RBAC 가 아닌 별도 모델) | session-07 |

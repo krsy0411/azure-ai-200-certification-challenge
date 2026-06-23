@@ -27,11 +27,11 @@ Copy-Item -Path save-points/session-03/start/* -Destination workshop -Recurse -F
 
 이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
 
-학습자가 채우는 파일은 세 개입니다 — `infra/sessions/03-redis-cache/main.bicep` (모듈 조립), `apps/api/src/cache/redis_client.py` (Redis 클라이언트), `apps/api/src/cache/semantic.py` (시맨틱 캐시). 나머지 (모듈 3개 · 캐시 배선) 는 완성되어 제공됩니다.
+학습자가 채우는 파일은 세 개입니다 : `infra/sessions/03-redis-cache/main.bicep` (모듈 조립), `apps/api/src/cache/redis_client.py` (Redis 클라이언트), `apps/api/src/cache/semantic.py` (시맨틱 캐시). 나머지는 완성되어 제공됩니다.
 
 ---
 
-## 1단계 · 프로비저닝
+## 1 단계 : 프로비저닝
 
 `workshop/infra/sessions/03-redis-cache/main.bicep` 을 열고, 아래 순서대로 각 주석을 찾아 코드를 채웁니다.
 
@@ -126,7 +126,7 @@ az deployment group what-if `
 what-if 결과가 의도대로면 `what-if` 를 `create` 로 바꿔 배포합니다.
 
 > [!NOTE]
-> Azure Managed Redis 클러스터 생성에 약 **8~12분** 소요됩니다. 본 챌린지에서 가장 오래 걸리는 배포 중 하나입니다. 진행되는 동안 [2단계 · 복붙으로 경험해보기](#2단계--복붙으로-경험해보기) 의 캐시 전략과 코드를 정독합니다.
+> Azure Managed Redis 클러스터 생성에 약 **8~12분** 소요됩니다. 본 챌린지에서 가장 오래 걸리는 배포 중 하나입니다.
 
 > [!CAUTION]
 > **비용 안내** — Managed Redis 는 본 챌린지에서 가장 비싼 idle 자원입니다 (최소 등급 Balanced_B0 라도 시간당 누적). 세션을 마친 뒤에는 즉시 [자원 정리](../cleanup.md) 를 수행하는 것을 권장합니다.
@@ -147,27 +147,9 @@ az redisenterprise show -n $REDIS_NAME -g rg-ai200ws-dev \
 
 ---
 
-## 2단계 · 복붙으로 경험해보기
+## 2 단계 : 복붙으로 경험해보기
 
-### 2.1 캐시 전략 트레이드오프
-
-RAG 응답을 캐싱할 때 세 가지 전략이 있습니다.
-
-| 전략 | 캐시 키 | 히트 조건 | 장점 | 단점 |
-|---|---|---|---|---|
-| **정확 매칭** | `hash(질문 문자열)` | 두 질문의 문자열이 완전히 동일 | 구현 단순 · 검색 비용 거의 0 | "휴가 정책 알려줘" 와 "휴가 규정이 어떻게 돼?" 가 다른 키로 분리되어 hit 율이 매우 낮음 |
-| **시맨틱 유사도** | 질문 임베딩 벡터 | 새 질문 임베딩이 기존 캐시 키와 cosine 유사도 ≥ 임계값 | paraphrase 흡수 · hit 율 높음 | 임계값 튜닝 필요 · 잘못된 hit 위험 |
-| **RAG 인지 (튜플)** | (질문 임베딩, 사용 문서 셋) | 의미 + 문서 셋 모두 일치 | 문서 변경 시 자동 무효화 | 캐시 키 공간이 커지고 hit 율이 다소 떨어짐 |
-
-본 챌린지는 **시맨틱 유사도 + 임계값 0.62** + TTL 24h 를 채택합니다.
-
-> [!IMPORTANT]
-> **임계값은 임베딩 모델 기준으로 실측해 정합니다** — `text-embedding-3-large` 로 한국어 paraphrase 쌍을 실측하면 같은 의미의 질문이 cosine **0.6~0.76**, 의미가 다른 질문이 **0.2~0.3** 에 분포합니다. 예) "회사 휴가 정책 알려줘" ↔ "휴가 규정이 어떻게 돼?" = **0.64**, ↔ "연차 어떻게 신청해?" = 0.23. 따라서 둘을 가르는 컷오프는 **0.62** 근방입니다. (영어 SBERT 류 직관으로 0.9 대를 쓰면 같은 의미인데도 전부 miss 가 됩니다.)
-
-> [!TIP]
-> **시험 단골 패턴** — "RAG 응답 캐싱은 문자열 매칭으로 부족하다 — 임베딩 기반 시맨틱 캐시" 가 정답입니다. 임계값을 너무 낮추면 잘못된 hit, 너무 높이면 캐시가 거의 비어 있으므로 **반드시 쓰는 임베딩 모델·언어로 같은 의미/다른 의미 쌍의 유사도를 실측한 뒤** 그 사이 값으로 정합니다 (본 챌린지 모델 기준 0.55~0.65).
-
-### 2.2 Redis 클라이언트 구현
+### 2.1 Redis 클라이언트 구현
 
 `apps/api/src/cache/redis_client.py` 의 `build_redis_client` 본체가 비어 있습니다. 주석 아래에 채웁니다. 저수준으로 토큰을 비밀번호에 넣는 대신 `redis-entraid` 의 credential provider 를 써서 토큰 발급·갱신·TLS 를 캡슐화합니다.
 
@@ -188,7 +170,9 @@ RAG 응답을 캐싱할 때 세 가지 전략이 있습니다.
 > [!CAUTION]
 > **`protocol=2` (RESP2) 를 반드시 명시** — Azure Managed Redis 는 `redis-py` 8.x 와 기본적으로 RESP3 로 협상합니다. 그런데 `redis-py` 의 고수준 `ft().search()` 결과 파서가 RESP3 응답(`{'total_results': ..., 'results': [...]}`)을 처리하지 못해 `result.docs` 가 **항상 빈 리스트**가 됩니다. 그러면 인덱스·데이터가 멀쩡하고 `FT.SEARCH` 를 raw 로 실행하면 매칭이 나오는데도, 코드 상으로는 **임계값과 무관하게 캐시가 영원히 miss** 합니다. `protocol=2` 로 고정하면 정상 파싱됩니다. (디버깅 팁: `FT.INFO` 의 `num_docs` 는 증가하는데 앱은 계속 miss 면 이 문제를 의심합니다.)
 
-### 2.3 시맨틱 캐시 구현
+### 2.2 시맨틱 캐시 구현
+
+RAG 응답 캐싱은 질문 문자열이 조금만 달라도 다른 키가 되는 문자열 매칭만으로는 hit 율이 너무 낮으므로, 질문 임베딩의 cosine 유사도가 임계값 이상이면 같은 질문으로 보는 **임베딩 기반 시맨틱 캐시**를 사용합니다. 본 챌린지는 **임계값 0.62 + TTL 24h** 를 채택합니다.
 
 `apps/api/src/cache/semantic.py` 의 `SemanticCache` 메서드를 채웁니다.
 
@@ -238,6 +222,11 @@ RAG 응답을 캐싱할 때 세 가지 전략이 있습니다.
             return None
 ```
 
+> [!IMPORTANT]
+> **임계값은 임베딩 모델 기준으로 실측해 정합니다**
+> 
+> `text-embedding-3-large` 로 한국어 paraphrase 쌍을 실측하면 같은 의미의 질문이 cosine **0.6~0.76**, 의미가 다른 질문이 **0.2~0.3** 에 분포합니다. 예) "회사 휴가 정책 알려줘" ↔ "휴가 규정이 어떻게 돼?" = **0.64**, ↔ "연차 어떻게 신청해?" = 0.23. 따라서 둘을 가르는 컷오프는 **0.62** 근방입니다. (영어 SBERT 류 직관으로 0.9 대를 쓰면 같은 의미인데도 전부 miss 가 됩니다.)
+
 `store` 와 `close` 를 마저 채웁니다. 저장은 **Hash** 로 합니다 — `FT.SEARCH` 는 인덱스 prefix 와 일치하는 hash 키만 인덱싱합니다.
 
 ```python
@@ -263,7 +252,7 @@ RAG 응답을 캐싱할 때 세 가지 전략이 있습니다.
 > [!NOTE]
 > 캐시 계층은 `apps/api/src/rag/chain.py` 에 이미 배선되어 있습니다 — 질문 임베딩 직후 `cache.lookup` 으로 hit 면 즉시 반환, miss 면 retrieve·generate 후 `cache.store`. `STORE_BACKEND` 분기처럼 `CACHE_ENABLED=false` 면 캐시 계층이 없는 것처럼 동작합니다.
 
-### 2.4 이미지 빌드 · 배포 · 호출
+### 2.3 이미지 빌드 · 배포 · 호출
 
 ```bash
 ACR_NAME=$(az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
@@ -301,7 +290,7 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 ---
 
-## 3단계 · 데이터 · 지표 확인
+## 3 단계 : 데이터 · 지표 확인
 
 1번은 **로컬 `redis-cli` 터미널**에서, 2~4번은 [Azure Portal](https://portal.azure.com) 에서 확인합니다.
 
@@ -365,21 +354,6 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
    ![캐시 hit 건의 POST /api/chat 트랜잭션 상세 — cache.lookup 만 남고 후속 span 이 없는 Application Insights Transaction search 의 Azure Portal 스크린샷](images/session-03/3d-transaction-search-cache-hit-trace-02.png)
 
    첫 번째 건은 `cache.lookup` 뒤에 retrieve · generate span 이 이어지고, 두 번째 건은 `cache.lookup` 만 남고 후속 span 이 없는지 확인합니다.
-
----
-
-## Microsoft Learn 경로 커버리지 — 사용 / 생략
-
-[Enhance AI solutions with Azure Managed Redis](https://learn.microsoft.com/ko-kr/training/paths/enhance-ai-solutions-azure-managed-redis/) 학습 경로 3개 모듈을 본 세션에서 어떻게 다루는지 정리합니다.
-
-| 모듈 | 단원 핵심 | 본 세션 |
-|---|---|---|
-| **1. 데이터 작업 구현** | Managed Redis 살펴보기 · 클라이언트 라이브러리 + TLS + Entra ID · SET/GET·TTL·캐시-어사이드·무효화 | **사용** — Entra ID 인증(`redis-entraid`), TTL 24h, 캐시 store/lookup (2.2 · 2.3) |
-| **2. 이벤트 메시징 구현** | pub/sub · Redis Streams 작업 큐 · 브로드캐스트 vs 조정 배포 | **생략** — session-04 의 Service Bus · Event Grid · Functions 와 개념 중복. 본 챌린지는 Azure 네이티브 메시징을 session-04 에서 다룸 |
-| **3. 벡터 스토리지 구현** | 인덱스/쿼리 (FT.CREATE · KNN) · 인덱스 전략 (FLAT vs HNSW · 메트릭 · FLOAT32) · 데이터 구조 (해시 vs JSON) | **사용** — FLAT + COSINE + FLOAT32 + Hash 로 시맨틱 캐시 (2.3). HNSW·JSON 은 캐시 규모상 미채택 |
-
-> [!NOTE]
-> **인덱스 선택 근거** — 학습 경로 기준 10,000 벡터 미만 · 완벽한 정확도면 FLAT 권장. 시맨틱 캐시는 엔트리가 수백~수천이라 FLAT 이 적합하며, 근사 오차로 인한 잘못된 hit 위험도 낮습니다. HNSW 는 캐시가 수만 건 이상으로 커질 때 고려합니다.
 
 ---
 

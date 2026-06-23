@@ -9,7 +9,9 @@
 > - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
 
 > [!NOTE]
-> **용어 안내** — 본 세션의 "인제스션 (ingestion)" 은 외부 데이터를 시스템 안으로 수집·적재하는 행위입니다. "인젝션 (injection — 주입)" 과 헷갈리지 않도록 주의합니다.
+> **용어 안내**
+>
+> 본 세션의 "인제스션 (ingestion)" 은 외부 데이터를 시스템 안으로 수집·적재하는 행위입니다. "인젝션 (injection — 주입)" 과 헷갈리지 않도록 주의합니다.
 
 ---
 
@@ -29,11 +31,11 @@ Copy-Item -Path save-points/session-04/start/* -Destination workshop -Recurse -F
 
 이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
 
-학습자가 채우는 파일은 두 개입니다 — `infra/sessions/04-async-ingestion/main.bicep` (모듈 조립), `apps/functions/function_app.py` (트리거 함수). 모듈 11개와 `requirements.txt` · `host.json` 은 완성되어 제공됩니다.
+학습자가 채우는 파일은 두 개입니다 : `infra/sessions/04-async-ingestion/main.bicep` (모듈 조립), `apps/functions/function_app.py` (트리거 함수).
 
 ---
 
-## 1단계 · 프로비저닝
+## 1 단계 : 프로비저닝
 
 `workshop/infra/sessions/04-async-ingestion/main.bicep` 을 열고, 그룹별 주석을 찾아 코드를 채웁니다.
 
@@ -136,7 +138,7 @@ module egSubscription '../../modules/session-04/event-grid-subscription.bicep' =
 
 ### 1.4 역할 할당 — User Assigned Managed Identity + 사용자 (E2E 테스트에 필요)
 
-`// -------- 4) ...` 와 `// -------- 4b) ...` 주석 아래에 추가합니다. Function 의 신원에 Service Bus 수신 + Storage Blob/Queue 권한을, 사용자에게는 2.5 의 E2E 테스트에서 본인 `az login` 자격으로 Blob 업로드·검증할 권한을 부여합니다. `if (!empty(userObjectId))` 조건부 모듈이지만, 표준 배포 (3단계) 가 항상 `userObjectId` 를 넘기므로 그대로 채웁니다.
+`// -------- 4) ...` 와 `// -------- 4b) ...` 주석 아래에 추가합니다. Function 의 신원에 Service Bus 수신 + Storage Blob/Queue 권한을, 사용자에게는 2.3 의 E2E 테스트에서 본인 `az login` 자격으로 Blob 업로드·검증할 권한을 부여합니다. `if (!empty(userObjectId))` 조건부 모듈이지만, 표준 배포 (3단계) 가 항상 `userObjectId` 를 넘기므로 그대로 채웁니다.
 
 ```bicep
 module sbReceiverUami '../../modules/session-04/role-assignment-servicebus.bicep' = {
@@ -284,7 +286,7 @@ az deployment group create \
 ```
 
 > [!NOTE]
-> Service Bus · Event Grid · Storage · Function App 동시 배포에 약 **5~7분** 소요됩니다. 진행되는 동안 [2단계 · 복붙으로 경험해보기](#2단계--복붙으로-경험해보기) 의 이벤트 흐름을 정독합니다.
+> Service Bus · Event Grid · Storage · Function App 동시 배포에 약 **5~7분** 소요됩니다.
 
 ### 1.7 배포 완료 확인
 
@@ -309,56 +311,11 @@ az servicebus queue show -g rg-ai200ws-dev --namespace-name $SB --name ingest-qu
 
 ---
 
-## 2단계 · 복붙으로 경험해보기
+## 2 단계 : 복붙으로 경험해보기
 
-### 2.1 이벤트 흐름
+### 2.1 함수 코드 구현
 
-```mermaid
-flowchart LR
-  U(["사용자"]) -- "1. PDF · Markdown 업로드" --> Blob
-  Blob[("Blob Storage<br/>documents")] -- "2. Blob Created 이벤트" --> EG
-  EG{{"Event Grid<br/>System Topic"}} -- "3. subscription 라우팅" --> SBQ
-  SBQ[("Service Bus<br/>ingest-queue")] -- "4. queue trigger" --> Func
-  Func["on_ingest_message"] -- "5a. Blob 다운로드 (MI)" --> Blob
-  Func -- "5b. 청크 분할" --> Func
-  Func -- "5c. 배치 임베드" --> AOAI["Azure OpenAI<br/>text-embedding-3-large"]
-  Func -- "5d. upsert" --> Cosmos[("Cosmos DB<br/>chunks")]
-  Func -- "5d. upsert" --> Pg[("PostgreSQL<br/>chunks")]
-  Cosmos -- "6. change feed" --> Lease[("leases<br/>(Bicep 사전 생성)")]
-  Lease -- "7. change feed trigger" --> Func2["on_cosmos_change"]
-  Func2 -- "8. 집계" --> Stats[("doc_stats")]
-  SBQ -. "처리 실패 (max delivery 5)" .-> DLQ[("DLQ")]
-
-  classDef store fill:#e1f5fe,stroke:#0277bd,color:#000
-  classDef compute fill:#fff3e0,stroke:#e65100,color:#000
-  classDef messaging fill:#f3e5f5,stroke:#6a1b9a,color:#000
-  classDef ai fill:#e8f5e9,stroke:#2e7d32,color:#000
-  classDef fail fill:#ffebee,stroke:#c62828,color:#000
-  class Blob,Cosmos,Pg,Lease,Stats store
-  class Func,Func2 compute
-  class EG,SBQ messaging
-  class AOAI ai
-  class DLQ fail
-```
-
-> [!TIP]
-> **왜 동기 호출이 아닌 큐 기반인가** — 임베드·청크 분할 같은 무거운 작업을 큐로 빼면 사용자 응답이 빨라지고, 일시 실패에 대한 재시도와 DLQ 격리가 자연스럽게 따라옵니다. 큰 페이로드(문서 본문)는 메시지에 싣지 않고 Blob URL 만 전달하는 claim-check 패턴을 씁니다.
-
-### 2.2 왜 Event Grid 와 Service Bus 둘 다 쓰는가
-
-| 차원 | Event Grid | Service Bus |
-|---|---|---|
-| **모델** | 이벤트 라우터 (publish · subscribe) | 메시지 큐 (FIFO · 트랜잭션) |
-| **전달 보장** | At-least-once + 재시도 | At-least-once + DLQ + 순서 보장 |
-| **이벤트 소스** | Blob Storage 등 풍부 | 발신자가 직접 송신 |
-| **백프레셔** | 약함 | 강함 (큐가 버퍼) |
-| **본 챌린지 역할** | Blob 이벤트 → Service Bus 로 라우팅 | Function 처리 큐 + DLQ |
-
-### 2.3 함수 코드 구현
-
-`apps/functions/function_app.py` 의 함수 본체가 비어 있습니다. 트리거 데코레이터·헬퍼·의존성은 제공되며, 아래 본체를 채웁니다.
-
-`_extract_text` · `_upsert_cosmos` · `_upsert_pg` 를 채웁니다.
+`apps/functions/function_app.py` 의 함수 본체가 비어 있습니다. `_extract_text` · `_upsert_cosmos` · `_upsert_pg` 를 채웁니다.
 
 ```python
 def _extract_text(blob_name: str, raw: bytes) -> str:
@@ -455,7 +412,7 @@ def on_cosmos_change(docs: func.DocumentList) -> None:
         stats.upsert_item(item)
 ```
 
-### 2.4 함수 배포
+### 2.2 함수 배포
 
 ```bash
 cd apps/functions
@@ -463,7 +420,7 @@ func azure functionapp publish $FUNC --python --build remote
 cd ../..
 ```
 
-### 2.5 E2E 테스트 — 업로드 후 양쪽 인덱스 도착 확인
+### 2.3 E2E 테스트 — 업로드 후 양쪽 인덱스 도착 확인
 
 ```bash
 # 1) 샘플 markdown
@@ -515,7 +472,7 @@ psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
 
 ---
 
-## 3단계 · Azure Portal UI 에서 확인
+## 3 단계 : Azure Portal UI 에서 확인
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
@@ -581,21 +538,6 @@ PY
 
 ![잘못된 메시지가 5회 재시도 후 Dead-letter 큐로 이동해 Dead-lettered Messages 카운트가 증가한 Service Bus 의 Azure Portal 스크린샷](images/session-04/04-07-servicebus-deadletter-01.png)
 ![Dead-letter 큐의 메시지 상세를 보여 주는 Service Bus 의 Azure Portal 스크린샷](images/session-04/04-07-servicebus-deadletter-02.png)
-
----
-
-## Microsoft Learn 경로 커버리지 — 사용 / 생략
-
-[Integrate backend services for AI solutions](https://learn.microsoft.com/ko-kr/training/paths/integrate-backend-services-ai-solutions/) 학습 경로 3개 모듈을 본 세션에서 어떻게 다루는지 정리합니다.
-
-| 모듈 | 단원 핵심 | 본 세션 |
-|---|---|---|
-| **1. Service Bus 로 AI 작업 큐** | 메시징 개념 · 큐 vs 토픽 · 메시지 구조화(claim-check·correlation) · peek-lock·DLQ | **사용** — 큐(`ingest-queue`) + DLQ(max delivery 5) + claim-check(Blob URL 전달) (1.2 · 3.x) |
-| **2. Event Grid 이벤트 기반 워크플로** | 개념·패턴 · 이벤트 스키마/필터 · 배달·재시도·dead-letter · 커스텀 이벤트 게시 | **일부 사용** — Blob System Topic → Service Bus 전달, BlobCreated 필터, 재시도. **생략** — 커스텀 이벤트 게시(AI 앱이 직접 발행)는 범위 외 |
-| **3. Functions 서버리스 AI 백엔드** | 호스팅(Flex vs Premium) · 로컬 개발 · 트리거·바인딩 · 비밀·구성 · ID·액세스 | **사용** — Flex Consumption + 신 스키마, Service Bus/Cosmos 트리거, Managed Identity 바인딩. **생략** — 연습의 MCP 서버 시나리오(인제스션과 무관, Phase 10 후보) |
-
-> [!NOTE]
-> **학습 경로보다 깊이 다루는 부분** — Flex Consumption 신 스키마, Storage `allowSharedKeyAccess=false` 시 Functions 부팅 함정, Cosmos change feed lease container 사전 생성, Event Grid → Service Bus 전달을 위한 System Topic 관리 ID RBAC 는 실전 함정으로 본 세션이 보강합니다.
 
 ---
 

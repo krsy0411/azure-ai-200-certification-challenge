@@ -30,7 +30,7 @@ Copy-Item -Path save-points/session-05/start/* -Destination workshop -Recurse -F
 
 ---
 
-## 1단계 · 프로비저닝
+## 1 단계 : 프로비저닝
 
 `workshop/infra/sessions/05-app-config-flags/main.bicep` 을 열고, 그룹별 주석을 찾아 코드를 채웁니다.
 
@@ -205,27 +205,14 @@ az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
 
 ---
 
-## 2단계 · 복붙으로 경험해보기
+## 2 단계 : 복붙으로 경험해보기
 
-### 2.1 왜 Key Vault 만으로는 부족한가
+### 2.1 App Configuration 로더 구현
 
-| 차원 | Key Vault | App Configuration |
-|---|---|---|
-| **목적** | 시크릿 (키 · 비밀번호 · 연결문자열) 보관 | 설정값 · 피처 플래그 · 환경 분리 |
-| **버저닝 모델** | 시크릿 버전 | 라벨 (`dev`/`prod`) + 스냅샷 |
-| **접근 빈도** | 드물게 (앱 시작 시 정도) | 자주 (런타임 refresh 폴링) |
-| **요금 모델** | 작업당 과금 | 요청당 + 저장당 과금 |
-
-핵심 차이 — **시크릿은 자주 읽으면 안 되고, 설정값은 자주 읽어야 합니다.** App Configuration 의 Key Vault reference 기능으로 진짜 시크릿만 Key Vault 에 두고 안전하게 참조합니다.
-
-> [!TIP]
-> **시험 단골 패턴** — "endpoint URL · 피처 플래그 · 일반 설정은 Key Vault 가 아닌 App Configuration 에." 시크릿이 아닌 endpoint · 플래그는 App Configuration 에, 진짜 시크릿만 Key Vault 에 둡니다.
-
-### 2.2 App Configuration 로더 구현
-
-`apps/api/src/config/loader.py` 의 `load_app_config` 본체가 비어 있습니다. `main.py` 배선(요청마다 `refresh()` 후 `enable_semantic_cache` 평가)은 이미 제공됩니다.
+`apps/api/src/config/loader.py` 의 `load_app_config` 함수가 `raise NotImplementedError` 로 비어 있습니다. 그 줄을 찾아 함수 본체를 아래 코드로 교체합니다.
 
 ```python
+async def load_app_config(settings: Settings) -> AppConfig:
     credential = DefaultAzureCredential()
     provider = await load(
         endpoint=settings.app_config_endpoint,
@@ -239,7 +226,7 @@ az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
     return AppConfig(provider, credential)
 ```
 
-### 2.3 이미지 빌드 · 배포 · 토글 실험
+### 2.2 이미지 빌드 · 배포 · 토글 실험
 
 ```bash
 ACR_NAME=$(az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
@@ -258,7 +245,7 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
-여기서는 CLI 로 ON/OFF 효과를 빠르게 확인합니다. Portal 토글로 절벽 차트를 만드는 본 캡쳐 시퀀스는 [3단계 · Azure Portal UI 에서 확인](#3단계--azure-portal-ui-에서-확인) 에서 진행합니다.
+여기서는 CLI 로 ON/OFF 효과를 빠르게 확인합니다. Portal 토글로 절벽 차트를 만드는 본 캡쳐 시퀀스는 [3 단계 : Azure Portal UI 에서 확인](#3-단계--azure-portal-ui-에서-확인) 에서 진행합니다.
 
 캐시 ON 상태에서 검증용 트래픽을 흘려, hot 질문이 캐시 hit 으로 즉시 반환되는지 확인합니다. 헬퍼 스크립트는 hot 질문 (캐시 hit 유발) 과 다양한 질문 (retrieve+generate = miss 유발) 을 번갈아 보냅니다.
 
@@ -282,7 +269,7 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 ---
 
-## 3단계 · Azure Portal UI 에서 확인
+## 3 단계 : Azure Portal UI 에서 확인
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
@@ -348,20 +335,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 > [!NOTE]
 > **Live Metrics 는 이 세션에서 캡쳐하지 않습니다** — Live Metrics 는 SDK 기본값으로 켜져 있어 설정 문제는 아니지만, Azure Container Apps 가 트래픽이 없으면 replica 를 0 으로 내리는(scale-to-zero) 특성 때문에 실시간 스트림을 보내는 주체가 사라져 참가자가 재현하기 어렵습니다. 캐시 ON→OFF 효과는 위 **Logs(KQL)** 의 `hit_rate` 타임차트로 영구 데이터로 확인합니다. 관측성 전담 세션인 [session-06](./06-observability.md) 도 Live Metrics 대신 KQL 을 우선하는 같은 방식으로 구성됩니다.
-
----
-
-## Microsoft Learn 경로 커버리지 — 사용 / 생략
-
-[Manage app secrets and configuration](https://learn.microsoft.com/ko-kr/training/paths/manage-app-secrets-configuration/) 학습 경로 2개 모듈을 본 세션에서 어떻게 다루는지 정리합니다.
-
-| 모듈 | 단원 핵심 | 본 세션 |
-|---|---|---|
-| **1. Key Vault 로 비밀 관리** | 비밀/키/인증서 저장 · SDK 검색(관리 ID) · 버전·회전 · 캐싱 | **session-00 에서 커버** — Key Vault · User Assigned Managed Identity · Key Vault Secrets User 부여가 이미 구축됨. 본 세션은 그 secret 을 App Configuration reference 로 노출 |
-| **2. App Configuration 으로 설정 관리** | provider `load()` + DefaultAzureCredential · 레이블·피처 플래그 · Key Vault reference · 저장 대상 결정 | **사용** — Free store + 피처 플래그 + Key Vault reference + 동적 refresh (1·2단계). **생략** — 레이블 스태킹(dev/prod)은 단일 dev 환경이라 개념만 |
-
-> [!NOTE]
-> **인증** — 학습 경로 표준대로 연결 문자열 대신 endpoint + DefaultAzureCredential. App Configuration 측은 `App Configuration Data Reader`, Key Vault reference 해석은 session-01 의 `Key Vault Secrets User` 를 재사용합니다.
 
 ---
 

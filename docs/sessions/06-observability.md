@@ -30,7 +30,7 @@ Copy-Item -Path save-points/session-06/start/* -Destination workshop -Recurse -F
 
 ---
 
-## 1단계 · 프로비저닝
+## 1 단계 : 프로비저닝
 
 `workshop/infra/sessions/06-observability/main.bicep` 을 열고, 주석을 찾아 코드를 채웁니다. `workbookData` 변수(워크북 정의)는 이미 제공됩니다.
 
@@ -151,23 +151,15 @@ az resource list -g rg-ai200ws-dev --resource-type microsoft.insights/workbooks 
 
 ---
 
-## 2단계 · 복붙으로 경험해보기
+## 2 단계 : 복붙으로 경험해보기
 
-### 2.1 자동 계측 vs 커스텀 span
+### 2.1 커스텀 span + 메트릭 구현
 
-[session-01](./01-rag-mvp.md) 부터 켜둔 `azure-monitor-opentelemetry` 자동 계측은 HTTP 인입·외부 HTTP·DB 드라이버 호출과 timing 을 자동으로 잡습니다. 반면 **알 수 없는 것** 은 "retrieval 결과가 몇 개였나", "몇 토큰을 썼나", "캐시 hit 였나" 같은 비즈니스 의미입니다. 이 답에는 커스텀 span + attribute + 메트릭이 필요합니다.
+`apps/api/src/observability/spans.py` 파일에서 아래 내용들을 수행합니다.
 
-> [!TIP]
-> **시험 단골 패턴** — span 은 작업 단위(시작·종료 + 자식 span 트리), attribute 는 그 span 의 메타데이터 키/값. SpanKind 가 Application Insights 테이블 매핑을 결정합니다 — SERVER/CONSUMER 는 `requests`, CLIENT/INTERNAL/PRODUCER 는 `dependencies`.
-
-### 2.2 커스텀 span + 메트릭 구현
-
-`apps/api/src/observability/spans.py` 가 비어 있습니다. `chain.py`·`main.py` 배선은 이미 제공됩니다. 핵심은 **span attribute 와 OTEL 메트릭의 용도 분리** 입니다.
+`# 힌트: meter.create_counter ...` 주석 아래에 counter 4개를 추가합니다.
 
 ```python
-_tracer = trace.get_tracer("ai200.rag")
-_meter = metrics.get_meter("ai200.rag")
-
 # Counter 는 인터벌별 합으로 customMetrics.value 에 내보내져 KQL sum(value) 로 집계된다.
 _token_prompt = _meter.create_counter("tokens.prompt", unit="token", description="프롬프트 토큰")
 _token_completion = _meter.create_counter(
@@ -175,8 +167,11 @@ _token_completion = _meter.create_counter(
 )
 _cache_hit = _meter.create_counter("cache.hit", description="캐시 hit 횟수")
 _cache_total = _meter.create_counter("cache.total", description="캐시 조회 총 횟수")
+```
 
+동일 파일에서 아래 세 함수의 `raise NotImplementedError` 를 각각 교체합니다.
 
+```python
 @contextmanager
 def rag_span(name: str) -> Iterator[Span]:
     with _tracer.start_as_current_span(name) as span:
@@ -194,10 +189,7 @@ def record_cache(hit: bool) -> None:
         _cache_hit.add(1)
 ```
 
-> [!NOTE]
-> 배선(제공됨) — `chain.py` 가 `rag.retrieve`·`rag.generate` span 을 자동 request span 의 자식으로 열고(새 루트 span 을 만들지 않음), 토큰을 `set_attribute` + `record_tokens` 로, 캐시 결과를 `record_cache` 로 기록합니다. `cache.lookup` span 은 session-03 에서 이미 부여돼 있습니다.
-
-### 2.3 카오스 엔드포인트 (제공됨)
+### 2.2 카오스 엔드포인트 (제공됨)
 
 `main.py` 에 알림 검증용 엔드포인트가 이미 추가돼 있습니다.
 
@@ -208,7 +200,7 @@ async def chaos() -> None:
     raise HTTPException(status_code=500, detail="intentional chaos")
 ```
 
-### 2.4 빌드 · 배포 · 트래픽 발생
+### 2.3 빌드 · 배포 · 트래픽 발생
 
 ```bash
 ACR_NAME=$(az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
@@ -233,9 +225,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --chaos 10 --interval 3
 ```
 
-> [!WARNING]
-> **chaos 는 반드시 간격을 둡니다** — `/api/_chaos` 는 즉시 500 을 반환하므로 간격 없이 몰아치면 일부 요청이 Application Insights 에 누락돼 5분 내 5건 임계값을 못 채워 알림이 발화하지 않습니다. `--interval 3` 으로 간격을 두면 모든 요청이 기록됩니다. 정상 `/api/chat` 은 요청마다 처리 시간이 있어 자연히 간격이 생기므로 `--count` 만으로 충분합니다.
-
 5~10분 후 본인 이메일에 알림 메일 도착 여부를 확인합니다.
 
 ![Azure Monitor 오류율 경고 발화로 수신된 알림 이메일을 보여 주는 스크린샷](images/session-06/2-alert-notification-email.png)
@@ -244,7 +233,7 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 ---
 
-## 3단계 · Azure Portal UI 에서 확인
+## 3 단계 : Azure Portal UI 에서 확인
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
@@ -314,20 +303,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
    ![customMetrics KQL 결과가 timechart 로 렌더링된 모습을 보여 주는 Azure Portal 스크린샷](images/session-06/3e-logs-custom-metrics-timechart.png)
 
    토큰 쿼리는 `tokens.prompt` · `tokens.completion` 두 계열의 시계열로, 캐시 쿼리는 `hit_rate` 값이 채워진 차트로 렌더링되는지 확인합니다. 빈 결과라면 OpenTelemetry 메트릭(Counter) 발행이 누락된 상태입니다.
-
----
-
-## Microsoft Learn 경로 커버리지 — 사용 / 생략
-
-[Observe and troubleshoot apps](https://learn.microsoft.com/ko-kr/training/paths/observe-troubleshoot-apps/) 학습 경로 2개 모듈을 본 세션에서 어떻게 다루는지 정리합니다.
-
-| 모듈 | 단원 핵심 | 본 세션 |
-|---|---|---|
-| **1. OpenTelemetry 로 앱 계측** | SDK/Distro 추가 · span·trace 구성(get_tracer·start_as_current_span·set_attribute·SpanKind) · Azure Monitor 내보내기 · 분산 흐름 디버그 | **사용** — 자동 계측 위 커스텀 span + attribute + OTEL Counter (2.2). Collector 는 직접 내보내기로 대체(생략) |
-| **2. 로그·메트릭 분석** | KQL · 오류/성능 탐색(p95) · 통합 문서(Workbook) · 경고(metric vs log search · action group) | **사용** — Workbook(ARM JSON 임베드) + Log Search Alert(오류율·p95) + Action Group(3단계). **생략** — 대시보드(Workbook 으로 대체) · 스마트 감지(자동·무료라 확인만) |
-
-> [!NOTE]
-> **본 저장소 확장** — Workbook 의 `Microsoft.Insights/workbooks` Bicep 임베드는 학습 경로 범위 밖이지만, 본 챌린지의 Bicep 우선(IaC) 원칙에 따라 ARM JSON 을 Bicep 에 임베드합니다. 인증은 연결 문자열(ikey 포함) 인제스션이라 `Monitoring Metrics Publisher` 역할은 불필요합니다.
 
 ---
 
