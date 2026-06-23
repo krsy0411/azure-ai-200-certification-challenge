@@ -1,6 +1,6 @@
 # session-07 (Azure Kubernetes Service 대안 배포)
 
-👈 [챌린지 홈](../../README.md)
+👈 [session-06](./06-observability.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
@@ -344,30 +344,21 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
 1. **AKS** → **Workloads** → **Deployments** → `apps-api` 가 2/2 Ready
 
-   <!--
    ![apps-api Deployment 가 2/2 Ready 상태인 Workloads 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3a-aks-workloads-deployment-ready.png)
 
    `kubectl apply` 로 배포한 `apps-api` Deployment 가 Workloads 블레이드의 **Deployments** 탭에 **Ready 2/2** 로 표시되는지 확인합니다. Pods 탭에서 두 파드 모두 **Running** 상태인지도 함께 확인합니다.
-   -->
 
 2. **AKS** → **Services and ingresses** → `apps-api` 의 External IP 노출
 
-   <!--
    ![apps-api Service 에 External IP 가 할당된 Services and ingresses 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3b-aks-service-external-ip.png)
 
    `apps-api` Service 의 Type 이 **Load balancer** 이고, External IP 가 [2.4 호출 테스트](#24-호출-테스트) 에서 사용한 `LB_IP` 와 같은 값인지 확인합니다.
-   -->
 
 3. **AKS** → **Insights** → 노드 · Pod 메트릭 (Container Insights 동작 증거)
 
-   <!--
    ![노드와 Pod 의 CPU·메모리 메트릭 차트가 표시된 AKS Insights 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3c-aks-insights-node-pod-metrics.png)
 
    노드 2개와 `apps-api` Pod 의 CPU·메모리 사용량 차트에 데이터가 채워져 있는지 확인합니다. 차트가 보이면 DCR + DCRA 로 선언한 Container Insights 가 정상 동작한다는 증거입니다.
-   -->
-
-   > [!WARNING]
-   > 이 화면이 비어 있다면 DCR + DCRA 누락 함정입니다 — [함정 모음](../pitfalls/common.md#azure-kubernetes-service) 참고.
 
 4. **AKS** → **Logs** 에서 KQL 실행
 
@@ -381,14 +372,9 @@ curl -sX POST "http://$LB_IP/api/chat" \
    > [!NOTE]
    > `ContainerLogV2` 는 [2.3 placeholder 치환 + 배포](#23-placeholder-치환--배포) 에서 적용한 `container-insights-config.yaml` 과 에이전트 재시작 이후 몇 분(첫 수집까지 약 5~15분) 지나야 채워집니다. 재배포 직후 즉시 조회하면 빈 결과일 수 있으므로 잠시 기다린 뒤 다시 실행합니다.
 
-   > [!WARNING]
-   > `container-insights-config.yaml`(`containerlog_schema_version=v2`) 을 적용하지 않으면 컨테이너 stdout 로그가 신규 `ContainerLogV2` 가 아니라 레거시 `ContainerLog` 테이블로 수집되어 이 KQL 이 빈 결과로 보입니다. DCR 의 `enableContainerLogV2` 설정만으로는 전환되지 않으며, 에이전트 ConfigMap 의 `containerlog_schema_version=v2` 가 실제 스위치입니다. 빈 결과면 `ContainerLog`(V1) 테이블을 조회해 로그가 거기로 가고 있지 않은지, ConfigMap 적용·에이전트 재시작 여부를 확인합니다.
-
-   <!--
    ![ContainerLogV2 테이블 KQL 결과로 api 컨테이너 로그가 조회된 Logs 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3d-aks-logs-containerlogv2.png)
 
    쿼리 결과에 `api` 컨테이너의 최근 로그 행이 표시되는지 확인합니다. 행이 비어 있다면 `container-insights-config.yaml` 적용·에이전트 재시작 이후 수집이 시작되기까지 몇 분 기다렸는지, 또는 로그가 레거시 `ContainerLog` 테이블로 흘러가고 있지 않은지 확인합니다.
-   -->
 
 5. (검증) `kubectl logs -l app=apps-api --tail=50` — Workload Identity 로 Azure OpenAI · Cosmos 호출이 성공하는지 (인증 오류 없이 RAG 응답)
 
@@ -417,4 +403,4 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
 ---
 
-👈 [session-06](./06-observability.md) | [자원 정리](../cleanup.md) 👉
+👈 [session-06](./06-observability.md) | [챌린지 홈](../../README.md) 👉

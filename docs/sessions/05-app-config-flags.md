@@ -1,6 +1,6 @@
 # session-05 (App Configuration 피처 플래그)
 
-👈 [챌린지 홈](../../README.md)
+👈 [session-04](./04-async-ingestion.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
@@ -40,15 +40,12 @@ Copy-Item -Path save-points/session-05/start/* -Destination workshop -Recurse -F
 
 ```text
 infra/modules/session-05/
-├── app-configuration.bicep           # Free 등급 store (disableLocalAuth: false — 아래 NOTE 참고)
+├── app-configuration.bicep           # Free 등급 store
 ├── app-configuration-keyvalue.bicep  # 일반 키/값 (재사용)
 ├── app-configuration-keyvault-ref.bicep  # Key Vault reference
 ├── app-configuration-feature-flag.bicep  # 피처 플래그
 └── role-assignment-appconfig.bicep   # 역할 부여 (재사용)
 ```
-
-> [!NOTE]
-> 앱은 endpoint + Entra (User Assigned Managed Identity) 로 store 를 읽지만, ARM 으로 keyValues · 플래그를 시드하려면 store 의 local auth 를 켜둡니다 (`disableLocalAuth: false`). local auth 가 꺼져 있으면 ARM 시드가 Conflict 로 실패합니다.
 
 ### 1.2 store + 키/값 + sentinel
 
@@ -241,12 +238,6 @@ az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
     )
     return AppConfig(provider, credential)
 ```
-
-> [!WARNING]
-> **피처 플래그 refresh 는 4박자가 모두 필요** — `feature_flag_enabled=True` (플래그 로드, 단수 주의 — `feature_flags_enabled` 복수는 무시됨) + `feature_flag_refresh_enabled=True` (플래그 새로 고침 활성) + `refresh_on=[WatchKey(...)]` (감시 키) + 요청 핸들러의 `config.refresh()` 호출. 하나라도 빠지면 토글이 반영되지 않습니다. 특히 `feature_flag_refresh_enabled` 는 일반 설정 refresh 와 별개라 자주 누락됩니다.
-
-> [!NOTE]
-> 패키지는 `azure-appconfiguration-provider` (provider 의 `load`) 와 `featuremanagement` (`FeatureManager`) 두 개입니다. 저수준 `azure-appconfiguration` 이나 `azure.appconfiguration.feature_management` 가 아닙니다.
 
 ### 2.3 이미지 빌드 · 배포 · 토글 실험
 

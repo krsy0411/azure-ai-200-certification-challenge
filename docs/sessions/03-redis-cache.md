@@ -1,6 +1,6 @@
 # session-03 (Managed Redis 시맨틱 캐시)
 
-👈 [챌린지 홈](../../README.md)
+👈 [session-02](./02-pgvector.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**

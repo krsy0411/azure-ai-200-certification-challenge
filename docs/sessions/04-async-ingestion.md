@@ -1,6 +1,6 @@
 # session-04 (비동기 인제스션 파이프라인 — Service Bus + Event Grid + Azure Functions)
 
-👈 [챌린지 홈](../../README.md)
+👈 [session-03](./03-redis-cache.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**

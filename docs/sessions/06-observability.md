@@ -1,6 +1,6 @@
 # session-06 (Observability 심화 — 커스텀 OpenTelemetry span · KQL Workbook · Log Search Alert)
 
-👈 [챌린지 홈](../../README.md)
+👈 [session-05](./05-app-config-flags.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
@@ -194,9 +194,6 @@ def record_cache(hit: bool) -> None:
         _cache_hit.add(1)
 ```
 
-> [!CAUTION]
-> **`set_attribute` 만으로는 customMetrics 가 비어 나옵니다** — attribute 는 dependencies.customDimensions 로만 갑니다. 분당 토큰·캐시 hit rate 같은 **집계 시계열** 은 반드시 OTEL 메트릭(Counter) 으로 발행해야 `customMetrics` 테이블에 `value` 가 채워집니다.
-
 > [!NOTE]
 > 배선(제공됨) — `chain.py` 가 `rag.retrieve`·`rag.generate` span 을 자동 request span 의 자식으로 열고(새 루트 span 을 만들지 않음), 토큰을 `set_attribute` + `record_tokens` 로, 캐시 결과를 `record_cache` 로 기록합니다. `cache.lookup` span 은 session-03 에서 이미 부여돼 있습니다.
 
@@ -241,11 +238,9 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 5~10분 후 본인 이메일에 알림 메일 도착 여부를 확인합니다.
 
-<!--
 ![Azure Monitor 오류율 경고 발화로 수신된 알림 이메일을 보여 주는 스크린샷](images/session-06/2-alert-notification-email.png)
 
 이메일 제목에 alert 이름 `alert-error-rate-...` 가 포함되어 있는지, 본문의 검색 결과 수가 임계값 5 를 초과했는지 확인합니다. 메일이 오지 않으면 Action Group 구독 확인 메일의 `Subscribe` 링크를 클릭했는지 먼저 점검합니다.
--->
 
 ---
 
@@ -255,12 +250,10 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 1. **Application Insights** → **Workbooks** → `AI-200 Workshop 관측성` — P95 latency · 분당 토큰 · 캐시 hit rate 가 한 화면에 시각화
 
-   <!--
    ![챌린지 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3a-workbook-overview-01.png)
    ![챌린지 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3a-workbook-overview-02.png)
 
    워크북의 세 차트 — P95 latency · 분당 토큰 · 캐시 hit rate — 에 2단계에서 발생시킨 트래픽이 반영되어 있는지 확인합니다. 분당 토큰 차트에 `tokens.prompt` 와 `tokens.completion` 두 계열이 보이면 OpenTelemetry 메트릭 발행이 정상입니다.
-   -->
 
 2. **Application Insights** → **Transaction search** → 커스텀 RAG span 트리 확인
 
@@ -281,31 +274,25 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
    > [!NOTE]
    > 커스텀 span (특히 `rag.generate`) 은 트래픽이 적거나 replica 가 막 깨어난 (콜드 스타트) 상황에서는 OpenTelemetry 의 배치 export 와 Azure Container Apps 의 scale-to-zero 특성상 일부 누락될 수 있습니다. 위처럼 지속 트래픽을 흘려 replica 를 깨워 두면 안정적으로 기록됩니다. 이는 코드 문제가 아니라 서버리스 환경의 배치 텔레메트리 특성입니다.
 
-   <!--
    ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3b-transaction-search-span-tree-01.png)
    ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3b-transaction-search-span-tree-02.png)
 
    자동 계측된 `POST /api/chat` request span 아래에 `rag.retrieve` · `rag.generate` · `POST /openai/.../gpt-5-mini/chat/completions` 가 자식 span 으로 중첩되어 있는지 확인합니다. 각 span 을 선택하면 `retrieval.count` · `tokens.prompt` 같은 attribute 가 customDimensions 에 표시됩니다.
-   -->
 
 3. **Application Insights** → **Failures** → `/api/_chaos` 호출의 stack trace
 
-   <!--
    ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3c-failures-chaos-stack-trace-01.png)
    ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3c-failures-chaos-stack-trace-02.png)
    ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (3)](images/session-06/3c-failures-chaos-stack-trace-03.png)
 
    Failures 화면의 작업 목록에서 `POST /api/_chaos` 의 실패 10건이 집계되는지, 우측 패널에서 `intentional chaos` 예외의 stack trace 가 보이는지 확인합니다.
-   -->
 
 4. **Azure Monitor** → **Alerts** → 발화된 오류율 alert + 본인 이메일 메일
 
-   <!--
    ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷 (1)](images/session-06/3d-alerts-fired-error-rate-01.png)
    ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷 (2)](images/session-06/3d-alerts-fired-error-rate-02.png)
 
    Alerts 목록에 `alert-error-rate-...` 가 **Fired(발생됨)** 상태로 표시되는지 확인합니다. Action Group 에 등록한 본인 이메일로 같은 내용의 알림 메일이 도착했는지도 함께 확인합니다.
-   -->
 
 5. (권장) **Application Insights** → **Logs** 에서 다음 KQL 직접 실행
 
@@ -324,11 +311,9 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
    | render timechart
    ```
 
-   <!--
    ![customMetrics KQL 결과가 timechart 로 렌더링된 모습을 보여 주는 Azure Portal 스크린샷](images/session-06/3e-logs-custom-metrics-timechart.png)
 
    토큰 쿼리는 `tokens.prompt` · `tokens.completion` 두 계열의 시계열로, 캐시 쿼리는 `hit_rate` 값이 채워진 차트로 렌더링되는지 확인합니다. 빈 결과라면 OpenTelemetry 메트릭(Counter) 발행이 누락된 상태입니다.
-   -->
 
 ---
 
