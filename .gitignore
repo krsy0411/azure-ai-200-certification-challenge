@@ -63,3 +63,11 @@ tmp/
 # save-points/session-NN/start/ 의 코드를 cp -a 로 펼치는 학습자 작업 폴더.
 # 안에서 무엇을 하든 본 저장소의 git 상태는 영향을 받지 않는다.
 workshop/
+
+# ---- Maintainer 정답 통합본 (GitHub 비공개) ----
+# 루트 apps/ · infra/ 는 maintainer 가 정답을 작성하는 source-of-truth 이지만,
+# 참여자는 save-points/session-NN/{start,complete}/ 를 workshop/ 으로 복사해 작업하므로
+# 공개 저장소에는 올리지 않는다. 반드시 루트 앵커(/) 를 붙여 save-points/**/infra,
+# save-points/**/apps 등 하위 동명 디렉터리까지 무시되지 않도록 한다.
+/apps/
+/infra/
