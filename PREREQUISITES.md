@@ -1,7 +1,9 @@
 # 사전 준비 체크리스트
 
+👈 [챌린지 홈](./README.md)
+
 > [!IMPORTANT]
-> 본 워크샵을 시작하기 전 다음 체크리스트를 **순서대로 모두 완료** 합니다. 가장 큰 리스크는 **Azure OpenAI 액세스 승인** 입니다 — 신청 후 승인까지 시간이 걸릴 수 있으므로 가장 먼저 신청하는 것을 권장합니다.
+> 본 챌린지를 시작하기 전 다음 체크리스트를 **순서대로 모두 완료** 합니다. 가장 큰 리스크는 **Azure OpenAI 액세스 승인** 입니다 — 신청 후 승인까지 시간이 걸릴 수 있으므로 가장 먼저 신청하는 것을 권장합니다.
 
 본 체크리스트는 다음 6단계로 구성됩니다.
 
@@ -16,7 +18,7 @@
 
 ## 1. Azure 구독 준비
 
-본 워크샵은 워크샵 전용 구독을 제공하지 않습니다. 학습자가 **본인의 개인 Azure 계정** 으로 본인 구독에 배포합니다.
+본 챌린지는 Azure 구독을 제공하지 않습니다. 학습자가 **본인의 개인 Azure 계정** 으로 본인 구독에 배포합니다.
 
 - 종량제 (Pay-As-You-Go), Visual Studio Subscription, 학생·스타트업 구독 모두 사용 가능합니다
 - 구독에 대한 **Contributor 또는 Owner** 권한이 필요합니다 (RBAC 역할 할당을 위해 Owner 권장)
@@ -36,13 +38,13 @@
 신청 링크 — [aka.ms/oaiapply](https://aka.ms/oaiapply)
 
 > [!TIP]
-> 신청이 승인되기 전에는 Azure OpenAI 자원을 배포할 수 없으므로, 승인이 완료된 뒤에 본 워크샵의 첫 번째 세션 ([session-00](./docs/sessions/00-setup.md)) 을 진행합니다.
+> 신청이 승인되기 전에는 Azure OpenAI 자원을 배포할 수 없으므로, 승인이 완료된 뒤에 본 챌린지의 첫 번째 세션 ([session-00](./docs/sessions/00-setup.md)) 을 진행합니다.
 
 ---
 
 ## 3. 리전별 할당량 확인
 
-Azure 의 각 리전은 자원 종류별로 **사용 가능한 한도** (CPU 코어 수, 분당 토큰 수 등) 가 정해져 있습니다. 워크샵 기본 리전은 `koreacentral` (한국 중부) 이며, 다음 한도가 필요합니다.
+Azure 의 각 리전은 자원 종류별로 **사용 가능한 한도** (CPU 코어 수, 분당 토큰 수 등) 가 정해져 있습니다. 챌린지 기본 리전은 `koreacentral` (한국 중부) 이며, 다음 한도가 필요합니다.
 
 | 자원 | 필요한 한도 |
 |---|---|
@@ -72,13 +74,13 @@ az vm list-usage --location koreacentral -o table | grep -E "DSv3|Standard_D"
 
 ## 4. 로컬 개발 도구 설치
 
-본 워크샵은 학습자 본인 PC 에서 진행합니다 (Codespaces 사용하지 않음).
+본 챌린지는 학습자 본인 PC 에서 진행합니다 (Codespaces 사용하지 않음).
 
 ### 4.1 도구 버전 요구사항
 
 | 도구 | 최소 버전 | 확인 명령 |
 |---|---|---|
-| Python | 3.12+ | `python --version` |
+| Python | 3.12+ | `python3 --version` |
 | Node.js | 20+ | `node --version` |
 | Docker Desktop | 4.30+ | `docker info` |
 | Azure CLI | 2.65+ | `az --version` |
@@ -86,6 +88,9 @@ az vm list-usage --location koreacentral -o table | grep -E "DSv3|Standard_D"
 | Azure Functions Core Tools | 4.x | `func --version` |
 | kubectl (session-07 진행 시) | 1.30+ | `kubectl version --client` |
 | git | 2.40+ | `git --version` |
+
+> [!NOTE]
+> macOS·Linux 에는 `python3` 명령이 설치되어 있고, Windows 에서는 `python` (또는 `py`) 을 사용합니다. 본인 환경에 맞는 명령으로 버전을 확인합니다.
 
 > [!TIP]
 > **설치 명령 예시 (Windows `winget`)** — macOS 는 `brew install`, Linux 는 배포판 패키지 매니저 사용. 설치 후 PATH 갱신을 위해 **새 터미널**을 엽니다.
@@ -106,7 +111,7 @@ az vm list-usage --location koreacentral -o table | grep -E "DSv3|Standard_D"
 
 ### 4.2 Azure CLI 확장 설치
 
-본 워크샵 진행에 다음 확장이 필요합니다.
+본 챌린지 진행에 다음 확장이 필요합니다.
 
 ```bash
 az extension add --name containerapp --upgrade
@@ -135,7 +140,7 @@ docker pull node:20-alpine
 
 ## 5. Git 및 GitHub 준비
 
-본 워크샵은 GitHub 에 호스팅된 저장소를 클론해서 진행합니다.
+본 챌린지는 GitHub 에 호스팅된 저장소를 클론해서 진행합니다.
 
 ### 5.1 GitHub 계정
 
@@ -159,18 +164,18 @@ git config --global --list | grep -E "user\.(name|email)"
 - **HTTPS + Personal Access Token (PAT)** — 가장 간단합니다. [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens) 에서 토큰 생성 후, `git push` 시 비밀번호 대신 토큰을 입력합니다
 - **SSH 키** — 한 번 설정하면 매번 인증할 필요가 없습니다. [GitHub 공식 가이드 — SSH 키 생성](https://docs.github.com/ko/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent) 참고
 
-### 5.4 워크샵 저장소 클론
+### 5.4 챌린지 저장소 클론
 
 ```bash
-git clone <워크샵-저장소-URL> azure-ai-200-workshop
-cd azure-ai-200-workshop
+git clone <챌린지-저장소-URL> azure-ai-200-challenge
+cd azure-ai-200-challenge
 ```
 
 > [!NOTE]
-> **세션 시작본은 git 브랜치 / 태그가 아닌 폴더 복사로 받습니다** — 본 워크샵은 `save-points/session-NN/{start,complete}/` 폴더에 각 세션의 시작본과 완성본을 동시 보관합니다. 첫 세션 ([session-00](./docs/sessions/00-setup.md)) 진행 시 `cp -a save-points/session-00/start/. workshop/` 명령으로 작업 폴더를 만들고, 그 위에서 학습합니다. 자세한 사용법은 [save-points/README.md](./save-points/README.md) 를 참고합니다.
+> **세션 시작본은 git 브랜치 / 태그가 아닌 폴더 복사로 받습니다** — 본 챌린지는 `save-points/session-NN/{start,complete}/` 폴더에 각 세션의 시작본과 완성본을 동시 보관합니다. 첫 세션 ([session-00](./docs/sessions/00-setup.md)) 진행 시 `cp -a save-points/session-00/start/. workshop/` 명령으로 작업 폴더를 만들고, 그 위에서 학습합니다. 자세한 사용법은 [save-points/README.md](./save-points/README.md) 를 참고합니다.
 
 > [!TIP]
-> **본인 저장소로 Fork 후 진행하는 방법 (선택)** — 학습 진행 상황을 본인 GitHub 에 기록하고 싶다면, 워크샵 저장소를 본인 계정으로 Fork 한 뒤 그 Fork 를 클론합니다. 본인이 작성한 코드는 `workshop/` 폴더 안에 있으나 `.gitignore` 에 등록되어 있으므로, push 하고 싶다면 `git add -f workshop/`. 또는 별도 브랜치를 만들어 본인의 학습 결과물을 보관할 수 있습니다.
+> **본인 저장소로 Fork 후 진행하는 방법 (선택)** — 학습 진행 상황을 본인 GitHub 에 기록하고 싶다면, 챌린지 저장소를 본인 계정으로 Fork 한 뒤 그 Fork 를 클론합니다. 본인이 작성한 코드는 `workshop/` 폴더 안에 있으나 `.gitignore` 에 등록되어 있으므로, push 하고 싶다면 `git add -f workshop/`. 또는 별도 브랜치를 만들어 본인의 학습 결과물을 보관할 수 있습니다.
 
 ---
 
@@ -180,10 +185,41 @@ cd azure-ai-200-workshop
 
 ### 6.1 도구 버전 일괄 점검
 
+다음 명령을 한 줄씩 실행해 필요한 도구가 모두 설치되어 있는지 확인합니다. 하나가 실패해도 나머지 점검은 이어서 진행합니다.
+
 ```bash
-python --version && node --version && docker info >/dev/null && \
-  echo "Docker OK" && az --version | head -1 && \
-  az bicep version && func --version && git --version
+# Python — Windows 는 python (또는 py)
+python3 --version
+```
+
+```bash
+# Node.js
+node --version
+```
+
+```bash
+# Azure CLI
+az --version | head -1
+```
+
+```bash
+# Bicep
+az bicep version
+```
+
+```bash
+# Azure Functions Core Tools
+func --version
+```
+
+```bash
+# Git
+git --version
+```
+
+```bash
+# Docker — 데몬이 실행 중이면 Docker OK 가 출력됩니다
+docker info >/dev/null && echo "Docker OK"
 ```
 
 ### 6.2 Azure 개인 계정으로 로그인 및 구독 선택
@@ -195,7 +231,7 @@ az login
 # 사용 가능한 구독 목록 확인
 az account list --output table
 
-# 본인 워크샵용 구독을 명시적으로 선택
+# 본인 챌린지용 구독을 명시적으로 선택
 az account set --subscription "<본인-개인-구독-이름-또는-ID>"
 
 # 현재 활성 구독 + 본인 계정 확인
@@ -207,7 +243,7 @@ az account show --query "{name:name, id:id, tenantId:tenantId, user:user.name}" 
 
 ### 6.3 비용 모니터링 알람 설정 (강력 권장)
 
-워크샵 진행 중 누적 비용이 예상보다 커지지 않도록 예산 알람을 설정합니다.
+챌린지 진행 중 누적 비용이 예상보다 커지지 않도록 예산 알람을 설정합니다.
 
 - Azure 포털 → Cost Management → Budgets → 새 예산
 - 권장 설정 — 금액 `$30`, 임계치 80% 도달 시 이메일 알림
@@ -217,7 +253,7 @@ az account show --query "{name:name, id:id, tenantId:tenantId, user:user.name}" 
 ## 막혔을 때
 
 - **Azure OpenAI 액세스 미승인** — 승인이 완료된 뒤에 [session-00](./docs/sessions/00-setup.md) 을 진행합니다. 승인 진행 상황은 [Azure 포털 → Azure OpenAI](https://portal.azure.com/#blade/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/OpenAI) 또는 신청 시 입력한 이메일에서 확인합니다
-- **할당량 부족** — 모델 배포 시 `capacity: 10` (분당 10K 토큰) 으로 낮춥니다. 그래도 부족하면 `koreaeast` 또는 `japaneast` 리전 사용
+- **할당량 부족** — 모델 배포 시 `capacity: 10` (분당 10K 토큰) 으로 낮춥니다. 그래도 부족하면 `eastus` 또는 `japaneast` 리전 사용
 - **`bicep` 명령 실패** — `az bicep install` 후 `az bicep upgrade`
 - **Docker `linux/amd64` 빌드 느림 (ARM Mac 환경)** — `--platform linux/amd64` 옵션은 필수입니다. 대안으로 `az acr build` 를 사용하면 클라우드에서 빌드하므로 Docker Desktop 이 불필요합니다
 - **그 외** — [docs/pitfalls/common.md](./docs/pitfalls/common.md) 참고
