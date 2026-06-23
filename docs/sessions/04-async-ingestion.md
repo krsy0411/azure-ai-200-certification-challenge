@@ -134,9 +134,9 @@ module egSubscription '../../modules/session-04/event-grid-subscription.bicep' =
 }
 ```
 
-### 1.4 역할 할당 — User Assigned Managed Identity + (선택) 사용자
+### 1.4 역할 할당 — User Assigned Managed Identity + 사용자 (E2E 테스트에 필요)
 
-`// -------- 4) ...` 와 `// -------- 4b) ...` 주석 아래에 추가합니다. Function 의 신원에 Service Bus 수신 + Storage Blob/Queue 권한을, 사용자에게는 E2E 테스트용 권한을 부여합니다.
+`// -------- 4) ...` 와 `// -------- 4b) ...` 주석 아래에 추가합니다. Function 의 신원에 Service Bus 수신 + Storage Blob/Queue 권한을, 사용자에게는 2.5 의 E2E 테스트에서 본인 `az login` 자격으로 Blob 업로드·검증할 권한을 부여합니다. `if (!empty(userObjectId))` 조건부 모듈이지만, 표준 배포 (3단계) 가 항상 `userObjectId` 를 넘기므로 그대로 채웁니다.
 
 ```bicep
 module sbReceiverUami '../../modules/session-04/role-assignment-servicebus.bicep' = {
@@ -472,12 +472,16 @@ cat > /tmp/sample-policy.md <<'EOF'
 - 연간 휴가는 15일입니다.
 - 6개월 근속 후부터 사용 가능합니다.
 EOF
+```
 
+```bash
 # 2) Entra ID 인증 업로드
 STORAGE=$(az storage account list -g rg-ai200ws-dev --query "[?starts_with(name,'st')].name | [0]" -o tsv)
 az storage blob upload --account-name $STORAGE --container-name documents \
   --file /tmp/sample-policy.md --name policy/sample-policy.md --auth-mode login
+```
 
+```bash
 # 3) 약 30초 후 Cosmos 확인
 #    az 에는 Cosmos 데이터플레인 쿼리 명령이 없으므로 SDK 로 조회합니다.
 sleep 30
