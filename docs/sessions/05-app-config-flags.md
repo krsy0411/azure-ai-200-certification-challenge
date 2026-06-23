@@ -1,40 +1,12 @@
-# session-05 — App Configuration 피처 플래그
+# session-05 (App Configuration 피처 플래그)
 
-> **관련 Microsoft Learn 학습 경로**
->
-> - [Manage app secrets and configuration](https://learn.microsoft.com/ko-kr/training/paths/manage-app-secrets-configuration/)
+👈 [챌린지 홈](../../README.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md) ~ [session-04](./04-async-ingestion.md) 완료 — Azure Container Apps · Cosmos DB · PostgreSQL · Managed Redis · Key Vault · User Assigned Managed Identity · Application Insights 가 본인 구독에 존재
 > - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
-
----
-
-## 0. 이 세션에서 경험하는 내용
-
-- **한 문장 골** — 코드 한 줄도 고치지 않고, Azure Portal 의 피처 플래그 토글 하나로 시맨틱 캐시를 켜고 끌 수 있는 런타임 설정 분리를 도입
-- **새로 프로비저닝되는 자원**
-  - App Configuration (Free 등급 — 비용 0)
-  - 일반 키/값 (`aoai:endpoint`, `cosmos:endpoint`, `pg:host`, `redis:host`) + sentinel
-  - Key Vault reference (`secrets:aoai-endpoint` — session-01 secret 을 참조로 노출)
-  - Feature flag `enable_semantic_cache`, `enable_pg_backend`
-  - 역할 부여 — User Assigned Managed Identity 에 `App Configuration Data Reader`, 사용자에 `App Configuration Data Owner` (토글용)
-- **이 세션의 학습 포인트**
-  - 완성된 App Configuration 모듈을 `main.bicep` 에서 그룹별로 조립
-  - `azure-appconfiguration-provider` + `featuremanagement` 로 피처 플래그를 읽고, 동적 새로 고침으로 토글을 반영
-- **사용해볼 SDK / CLI**
-  - `azure-appconfiguration-provider` Python 패키지 — Key Vault reference 자동 해석 + sentinel refresh
-  - `featuremanagement` 의 `FeatureManager` — 피처 플래그 평가
-  - `az appconfig feature enable/disable` — CLI 로 플래그 토글
-- **Portal 에서 확인할 지표 / 데이터**
-  - App Configuration → Configuration explorer — 키/값 + Key Vault reference 목록
-  - App Configuration → Feature manager — 피처 플래그 토글 UI
-  - Application Insights → Logs(KQL) — 토글 OFF 직후 `cache.lookup` 의 분당 발생 건수가 0 으로 떨어지는 절벽
-
-> [!TIP]
-> 이 세션은 `Bicep 조립 → 배포 → loader 코드 채우기 → 이미지 빌드·배포 → 포털 토글 실험 → Portal 확인` 흐름으로 진행합니다.
 
 ---
 
@@ -66,11 +38,17 @@ Copy-Item -Path save-points/session-05/start/* -Destination workshop -Recurse -F
 
 `infra/modules/session-05/` 에 완성되어 있는 모듈입니다.
 
-- `app-configuration.bicep` — Free 등급 store. 앱은 endpoint + Entra(UAMI)로 읽지만, ARM 으로 keyValues·플래그를 시드하려면 store 의 local auth 를 켜둔다 (`disableLocalAuth: false`) — local auth 가 꺼져 있으면 ARM 시드가 Conflict 로 실패
-- `app-configuration-keyvalue.bicep` — 일반 키/값 (재사용)
-- `app-configuration-keyvault-ref.bicep` — Key Vault reference
-- `app-configuration-feature-flag.bicep` — 피처 플래그
-- `role-assignment-appconfig.bicep` — 역할 부여 (재사용)
+```text
+infra/modules/session-05/
+├── app-configuration.bicep           # Free 등급 store (disableLocalAuth: false — 아래 NOTE 참고)
+├── app-configuration-keyvalue.bicep  # 일반 키/값 (재사용)
+├── app-configuration-keyvault-ref.bicep  # Key Vault reference
+├── app-configuration-feature-flag.bicep  # 피처 플래그
+└── role-assignment-appconfig.bicep   # 역할 부여 (재사용)
+```
+
+> [!NOTE]
+> 앱은 endpoint + Entra (User Assigned Managed Identity) 로 store 를 읽지만, ARM 으로 keyValues · 플래그를 시드하려면 store 의 local auth 를 켜둡니다 (`disableLocalAuth: false`). local auth 가 꺼져 있으면 ARM 시드가 Conflict 로 실패합니다.
 
 ### 1.2 store + 키/값 + sentinel
 
@@ -200,8 +178,11 @@ output appConfigEndpoint string = appConfig.outputs.endpoint
 
 ```bash
 az bicep build --file infra/sessions/05-app-config-flags/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
+```
 
+```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
+
 az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/05-app-config-flags/main.bicep \
@@ -210,7 +191,7 @@ az deployment group create \
 ```
 
 > [!NOTE]
-> App Configuration 자체 배포는 약 **1분** 으로 본 워크샵에서 가장 빠릅니다.
+> App Configuration 자체 배포는 약 **1분** 으로 본 챌린지에서 가장 빠릅니다.
 
 ### 1.6 배포 완료 확인
 
@@ -393,25 +374,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 ---
 
-## 주의
-
-> [!WARNING]
-> **피처 플래그 refresh 4박자 누락** — `feature_flag_refresh_enabled=True` 가 빠지면 토글이 반영되지 않습니다 ([2.2](#22-app-configuration-로더-구현) 참고). 가장 흔한 함정입니다.
-
-> [!WARNING]
-> **Sentinel refresh 는 폴링 방식** — 30~60초 지연이 있으므로 토글 후 즉시 반영되지 않습니다. 자동 백그라운드 폴링이 아니라 요청 핸들러의 `config.refresh()` 호출 시점에 폴링이 일어납니다.
-
-> [!CAUTION]
-> **패키지 경로** — `azure-appconfiguration-provider` (provider `load`) + `featuremanagement` (`FeatureManager`) 두 개입니다. `azure.appconfiguration.feature_management` 같은 경로는 존재하지 않습니다.
-
-> [!NOTE]
-> **`is_enabled()` 는 호출마다 평가** — hot path 에서 과도하게 호출하지 않도록 요청 시작 시 1회 평가 후 결과를 재사용합니다.
-
-> [!IMPORTANT]
-> 더 자세한 함정 모음은 [docs/pitfalls/common.md](../pitfalls/common.md) 를 참고합니다.
-
----
-
 ## 마무리
 
 - **save-point** — 본 세션의 모든 변경은 `save-points/session-05/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-06/start/. workshop/` 를 실행합니다
@@ -420,12 +382,4 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 ---
 
-## 참고 자료
-
-- Microsoft Learn — [Manage app secrets and configuration](https://learn.microsoft.com/ko-kr/training/paths/manage-app-secrets-configuration/)
-- Microsoft Learn — [App Configuration Python provider](https://learn.microsoft.com/ko-kr/azure/azure-app-configuration/quickstart-python-provider)
-- 본 저장소 — `infra/sessions/05-app-config-flags/main.bicep`, `apps/api/src/config/loader.py`
-
----
-
-👈 [session-04 — 비동기 인제스션 (Service Bus + Event Grid + Functions)](./04-async-ingestion.md) | [session-06 — Observability 심화](./06-observability.md) 👉
+👈 [session-04](./04-async-ingestion.md) | [session-06](./06-observability.md) 👉

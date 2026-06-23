@@ -1,47 +1,12 @@
-# session-01 — RAG MVP on Azure Container Apps + Key Vault + OpenTelemetry
+# session-01 (RAG MVP on Azure Container Apps + Key Vault + OpenTelemetry)
 
-> **관련 Microsoft Learn 학습 경로**
->
-> - [Implement container app hosting on Azure](https://learn.microsoft.com/ko-kr/training/paths/implement-container-app-hosting-azure/)
-> - [Deploy and manage apps on Azure Container Apps](https://learn.microsoft.com/ko-kr/training/paths/deploy-manage-apps-azure-container-apps/)
-> - [Develop AI solutions with Azure Cosmos DB](https://learn.microsoft.com/ko-kr/training/paths/develop-ai-solutions-azure-cosmos-db/)
+👈 [챌린지 홈](../../README.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md) 완료 — Resource Group · Azure OpenAI · Log Analytics Workspace · Application Insights · Key Vault · User Assigned Managed Identity 가 본인 구독에 존재
 > - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
-
----
-
-## 0. 이 세션에서 경험하는 내용
-
-session-00 에서 만든 기반 자원 (Azure OpenAI · Key Vault · User Assigned Managed Identity) 위에, 사내 문서 RAG 의 최소 동작 버전 (MVP) 을 Azure Container Apps 로 올립니다. 이 세션을 마치면 코드 · `.env` · 디스크 어디에도 시크릿이 없는 상태로 Azure OpenAI 와 Cosmos DB 를 호출하는 RAG 백엔드와, 그 백엔드를 호출하는 Next.js 프런트엔드가 본인 구독 위에서 동작합니다.
-
-이번 세션은 session-00 과 같은 **채우기형 (fill-in)** 으로 진행합니다. 시작본 (`save-points/session-01/start`) 의 `main.bicep` 모듈 호출 블록과 앱 코드의 빈칸 (`raise NotImplementedError` · 힌트 주석) 을 완성본 기준으로 직접 채우고, 빌드 · 배포 · 호출까지 확인합니다.
-
-- **새로 프로비저닝되는 자원**
-  - Azure Container Registry — 컨테이너 이미지 저장 (Basic 등급, admin user disabled)
-  - Azure Container Apps Environment — Log Analytics Workspace 와 연결된 Azure Container Apps 환경
-  - Azure Container Apps Container App `ca-api-ai200ws-dev` — FastAPI 백엔드
-  - Azure Container Apps Container App `ca-web-ai200ws-dev` — Next.js 프런트엔드
-  - Cosmos DB account + database + container — vector policy 포함 (quantizedFlat)
-  - Key Vault Secret — Azure OpenAI endpoint URL
-  - User Assigned Managed Identity 역할 부여 — `AcrPull` · `Cosmos DB Built-in Data Contributor` · `Key Vault Secrets User`
-- **이 세션의 학습 포인트** — 완성된 Bicep 모듈을 `main.bicep` 한 곳에서 **직접 호출 (조립)** 하고, FastAPI RAG 파이프라인 (임베드 → 벡터 검색 → 답변 생성) 을 키 없는 인증으로 작성하며, Cosmos `chunks` 컨테이너에 문서를 시드해 의미 있는 답변이 나오는 상태까지 만들기
-- **사용해볼 SDK / CLI**
-  - `azure.identity.DefaultAzureCredential` — 로컬 · 클라우드 동일 인증 인터페이스
-  - `azure.cosmos.aio.CosmosClient` — Cosmos DB vector search (`VectorDistance()`)
-  - `openai.AsyncAzureOpenAI` with token provider — 키 없이 Azure OpenAI 호출
-  - `docker build --platform linux/amd64` → `az acr login` → `docker push` → `az containerapp update`
-- **Portal 에서 확인할 지표 / 데이터**
-  - Cosmos DB → Data Explorer — 시드된 chunk 확인
-  - Azure Container Apps → Log stream — FastAPI 요청 로그 실시간 확인
-  - Application Insights → Live Metrics — `/api/chat` 호출이 그래프에 반영
-  - Key Vault → Access control (IAM) — User Assigned Managed Identity 가 `Key Vault Secrets User` 역할 보유 확인
-
-> [!TIP]
-> 이 세션은 `시작본 받기 → Bicep 모듈 조립 → 앱 코드 채우기 → Cosmos 시드 → 빌드·배포·호출 → Portal 확인` 흐름으로 진행합니다.
 
 ---
 
@@ -77,16 +42,19 @@ Copy-Item -Path save-points/session-01/start/* -Destination workshop -Recurse -F
 
 `infra/modules/session-01/` 에 완성되어 있는 모듈입니다.
 
-- `acr.bicep` — Azure Container Registry (Basic 등급, admin user disabled)
-- `container-apps-env.bicep` — Log Analytics Workspace 와 연결된 Azure Container Apps Environment
-- `cosmos-account.bicep` — `capacityMode: 'Serverless'`, `disableLocalAuth=true`
-- `cosmos-sql-database.bicep` — 데이터베이스
-- `cosmos-sql-container.bicep` — vector policy 포함 컨테이너
-- `key-vault-secret.bicep` — Azure OpenAI endpoint secret
-- `role-assignment-acrpull.bicep` — User Assigned Managed Identity 가 Azure Container Registry 에서 이미지 pull
-- `role-assignment-cosmos-data-contributor.bicep` — User Assigned Managed Identity 가 Cosmos DB data plane 호출
-- `role-assignment-keyvault-secrets-user.bicep` — User Assigned Managed Identity 가 Key Vault Secret 읽기
-- `container-app.bicep` — Container App (ca-api · ca-web 에 두 번 재사용). `containerImage` 가 빈 값이면 public placeholder 이미지로 생성하고, 이후 `az containerapp update` 로 실제 이미지를 올림
+```text
+infra/modules/session-01/
+├── acr.bicep                                       # Azure Container Registry (Basic 등급, admin user disabled)
+├── container-apps-env.bicep                        # Log Analytics Workspace 와 연결된 Azure Container Apps Environment
+├── cosmos-account.bicep                            # capacityMode: 'Serverless', disableLocalAuth=true
+├── cosmos-sql-database.bicep                       # 데이터베이스
+├── cosmos-sql-container.bicep                      # vector policy 포함 컨테이너
+├── key-vault-secret.bicep                          # Azure OpenAI endpoint secret
+├── role-assignment-acrpull.bicep                   # User Assigned Managed Identity 가 Azure Container Registry 에서 이미지 pull
+├── role-assignment-cosmos-data-contributor.bicep   # User Assigned Managed Identity 가 Cosmos DB data plane 호출
+├── role-assignment-keyvault-secrets-user.bicep     # User Assigned Managed Identity 가 Key Vault Secret 읽기
+└── container-app.bicep                             # Container App (ca-api · ca-web 에 두 번 재사용). 빈 containerImage 면 placeholder 로 생성 후 az containerapp update 로 교체
+```
 
 > [!NOTE]
 > 시작본의 `main.bicep` 상단에는 파라미터 · 공용 태그 · 자원 이름 변수와 session-00 자원의 `existing` 참조 (Log Analytics Workspace · User Assigned Managed Identity · Azure OpenAI · Key Vault · Application Insights) 가 이미 채워져 있습니다. 아래 블록은 그 `existing` 참조 (`law`, `uami`, `aoai`, `kv`, `appInsights`) 와 변수 (`acrName`, `caeName` 등) 를 그대로 사용합니다.
@@ -171,7 +139,7 @@ module cosmosChunksContainer '../../modules/session-01/cosmos-sql-container.bice
 ```
 
 > [!CAUTION]
-> **Cosmos serverless 는 capability 가 아니라 `capacityMode`** — `cosmos-account.bicep` 모듈은 `capacityMode: 'Serverless'` 로 serverless 를 지정합니다. API 버전 `2024-05-15-preview` 이후로는 `EnableServerless` capability 지정이 거부됩니다 ([주의](#주의) · [docs/pitfalls/common.md](../pitfalls/common.md) 참고).
+> **Cosmos serverless 는 capability 가 아니라 `capacityMode`** — `cosmos-account.bicep` 모듈은 `capacityMode: 'Serverless'` 로 serverless 를 지정합니다. API 버전 `2024-05-15-preview` 이후로는 `EnableServerless` capability 지정이 거부됩니다 ([함정 모음](../pitfalls/common.md) 참고).
 
 ### 1.5 Key Vault Secret — Azure OpenAI endpoint URL
 
@@ -399,16 +367,16 @@ az bicep build --file infra/sessions/01-rag-mvp/main.bicep --stdout > /dev/null 
 
 ## 2단계 · 앱 코드 채우기
 
-Bicep 조립과 별개로, FastAPI 백엔드의 RAG 파이프라인 빈칸을 완성본 기준으로 채웁니다. 먼저 본 워크샵이 왜 `.env` 가 아니라 Key Vault + Managed Identity 를 쓰는지 짚고, 그 원칙이 코드로 어떻게 표현되는지 따라갑니다.
+Bicep 조립과 별개로, FastAPI 백엔드의 RAG 파이프라인 빈칸을 완성본 기준으로 채웁니다. 먼저 본 챌린지가 왜 `.env` 가 아니라 Key Vault + Managed Identity 를 쓰는지 짚고, 그 원칙이 코드로 어떻게 표현되는지 따라갑니다.
 
 > [!NOTE]
 > `apps/api/src/main.py` 최상단의 OpenTelemetry 자동 계측 블록은 시작본에 이미 완성되어 제공됩니다. 학습자가 채우는 부분은 `lifespan` 의 Azure 클라이언트 초기화와 `/api/chat` 핸들러 본문뿐입니다 ([2.5 FastAPI 엔트리](#25-fastapi-엔트리--appsapisrcmainpy) 참고).
 
 ### 2.1 왜 `.env` 가 아니라 Key Vault + Managed Identity 인가
 
-본 워크샵에서 가장 자주 묻는 질문에 대한 답입니다. 같은 작업 (Azure OpenAI 호출) 을 두 가지 방식으로 비교합니다.
+본 챌린지에서 가장 자주 묻는 질문에 대한 답입니다. 같은 작업 (Azure OpenAI 호출) 을 두 가지 방식으로 비교합니다.
 
-#### 방식 A — `.env` (본 워크샵에서 사용하지 않음, 비교용)
+#### 방식 A — `.env` (본 챌린지에서 사용하지 않음, 비교용)
 
 ```bash
 # 1) 키를 꺼냄
@@ -442,7 +410,7 @@ client = AzureOpenAI(
 - 누가 언제 키를 썼는지 감사 로그 없음
 - Entra ID · RBAC 거버넌스를 우회 — 키만 있으면 누구나 호출
 
-#### 방식 B — Key Vault + Managed Identity (본 워크샵 채택)
+#### 방식 B — Key Vault + Managed Identity (본 챌린지 채택)
 
 ```python
 # 키 없음 — Entra ID 가 토큰을 즉석에서 발급
@@ -540,7 +508,7 @@ async def chat_with_context(
 ```
 
 > [!CAUTION]
-> **gpt-5-mini 는 `max_tokens` · 커스텀 `temperature` 미지원** — 시작본 힌트 주석은 `temperature = 0.2` 를 제안하지만, gpt-5 계열 reasoning 모델은 이를 거부합니다. `max_tokens` 대신 `max_completion_tokens` 를 사용하고 `temperature` 는 생략합니다 ([주의](#주의) · [docs/pitfalls/common.md](../pitfalls/common.md) 참고).
+> **gpt-5-mini 는 `max_tokens` · 커스텀 `temperature` 미지원** — 시작본 힌트 주석은 `temperature = 0.2` 를 제안하지만, gpt-5 계열 reasoning 모델은 이를 거부합니다. `max_tokens` 대신 `max_completion_tokens` 를 사용하고 `temperature` 는 생략합니다 ([함정 모음](../pitfalls/common.md) 참고).
 
 ### 2.3 Cosmos DB 벡터 검색 — `apps/api/src/stores/cosmos_store.py`
 
@@ -597,7 +565,7 @@ async def vector_search(
                 doc_id=item["doc_id"],
                 title=item.get("title"),
                 # VectorDistance 는 cosine distance (0 = 동일, 2 = 반대). 유사도 점수
-                # 로 보여주려면 1 - distance/2 같은 정규화를 적용해도 좋다. 본 워크샵은
+                # 로 보여주려면 1 - distance/2 같은 정규화를 적용해도 좋다. 본 챌린지는
                 # 학습 단순화를 위해 distance 자체를 score 로 보고 0~1 로 클램프한다.
                 score=max(0.0, min(1.0, 1.0 - item["similarity"])),
             )
@@ -622,7 +590,7 @@ async def fetch_chunk_content(container: ContainerProxy, doc_id: str) -> str:
 ```
 
 > [!CAUTION]
-> **비동기 인증은 `aiohttp` 가 필요** — `azure.identity.aio.DefaultAzureCredential` 은 async HTTP transport 로 `aiohttp` 를 요구합니다. 시작본의 `apps/api/pyproject.toml` 에는 이미 `aiohttp>=3.10.0` 이 포함되어 있으므로 추가하지 않아도 됩니다. 만약 직접 의존성을 손볼 일이 있다면 이 항목을 지우지 않습니다 ([주의](#주의) · [docs/pitfalls/common.md](../pitfalls/common.md) 참고).
+> **비동기 인증은 `aiohttp` 가 필요** — `azure.identity.aio.DefaultAzureCredential` 은 async HTTP transport 로 `aiohttp` 를 요구합니다. 시작본의 `apps/api/pyproject.toml` 에는 이미 `aiohttp>=3.10.0` 이 포함되어 있으므로 추가하지 않아도 됩니다. 만약 직접 의존성을 손볼 일이 있다면 이 항목을 지우지 않습니다 ([함정 모음](../pitfalls/common.md) 참고).
 
 ### 2.4 RAG 파이프라인 조립 — `apps/api/src/rag/chain.py`
 
@@ -812,22 +780,23 @@ az deployment group create \
 > Cosmos DB account 생성이 가장 오래 걸려 약 **8~10분** 소요됩니다. 진행되는 동안 [4단계 · Cosmos 시드](#4단계--cosmos-시드) 의 환경변수 구성과 실행 명령을 미리 정독합니다.
 
 > [!NOTE]
-> **placeholder revision 이 `ActivationFailed` 로 보여도 정상** — 배포 직후 두 Container App 은 아직 자체 이미지가 없어 placeholder 이미지 (`mcr.microsoft.com/k8se/quickstart:latest`) 로 생성됩니다. 이 placeholder 이미지는 본 워크샵이 지정한 포트 (api 8000 · web 3000) 를 듣지 않으므로 첫 revision 이 `ActivationFailed` 로 표시될 수 있습니다. deployment 자체는 `Succeeded` 이며, [5단계 · 빌드 · 배포 · 호출](#5단계--빌드--배포--호출) 의 `az containerapp update --image` 로 실제 이미지를 올리면 새 revision 이 `Healthy` 가 됩니다. 배포 실패로 오해하지 않습니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).
+> **placeholder revision 이 `ActivationFailed` 로 보여도 정상** — 배포 직후 두 Container App 은 아직 자체 이미지가 없어 placeholder 이미지 (`mcr.microsoft.com/k8se/quickstart:latest`) 로 생성됩니다. 이 placeholder 이미지는 본 챌린지가 지정한 포트 (api 8000 · web 3000) 를 듣지 않으므로 첫 revision 이 `ActivationFailed` 로 표시될 수 있습니다. deployment 자체는 `Succeeded` 이며, [5단계 · 빌드 · 배포 · 호출](#5단계--빌드--배포--호출) 의 `az containerapp update --image` 로 실제 이미지를 올리면 새 revision 이 `Healthy` 가 됩니다. 배포 실패로 오해하지 않습니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).
 
 ### 3.3 배포 완료 확인
 
 자원 이름은 `uniqueString` 접미사가 붙어 구독마다 다릅니다. CLI 로 실제 이름을 조회한 뒤 상태를 확인합니다.
 
 ```bash
-# 본 워크샵 Resource Group 의 Cosmos DB account 이름을 조회
+# 본 챌린지 Resource Group 의 Cosmos DB account 이름을 조회한 뒤 준비 상태 확인
 COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 
-# Cosmos DB 가 준비되었는지
 az cosmosdb show \
   --name $COSMOS \
   --resource-group rg-ai200ws-dev \
   --query "{state:provisioningState, kind:kind}" -o jsonc
+```
 
+```bash
 # Azure Container Apps Environment 가 준비되었는지
 az containerapp env show \
   --name cae-ai200ws-dev \
@@ -991,28 +960,24 @@ curl -X POST "https://$API_FQDN/api/chat" \
 
 1. **Cosmos DB account** → **Data Explorer** → `appdb` → `chunks` 컨테이너 → **Items** 에 시드된 chunk (id · content · embedding 필드) 노출
 
-   <!-- 📸 capture: images/session-01/6a-cosmos-data-explorer-chunks.png -->
    ![Cosmos DB Data Explorer 의 chunks 컨테이너에 시드된 항목 목록을 보여 주는 Azure Portal 스크린샷](images/session-01/6a-cosmos-data-explorer-chunks.png)
 
    **Items** 목록에서 시드된 chunk 항목을 열어 `id` · `doc_id` · `content` · `embedding` 필드가 채워져 있는지 확인합니다. `embedding` 은 3072 개의 float 배열입니다.
 
 2. **Azure Container Apps `ca-api-ai200ws-dev`** → **Log stream** → 방금 `curl` 한 요청이 FastAPI 로그에 실시간으로 노출
 
-   <!-- 📸 capture: images/session-01/6b-container-app-log-stream.png -->
    ![Azure Container Apps Log stream 에 FastAPI 요청 로그가 출력되는 것을 보여 주는 Azure Portal 스크린샷](images/session-01/6b-container-app-log-stream.png)
 
    방금 실행한 `curl` 요청의 `POST /api/chat` 로그가 실시간으로 흐르는지 확인합니다.
 
 3. **Application Insights** → **Live Metrics** → 요청 그래프에 `/api/chat` 호출이 즉시 반영. Server response time 도 측정됨
 
-   <!-- 📸 capture: images/session-01/6c-app-insights-live-metrics.png -->
    ![Application Insights Live Metrics 의 요청 그래프를 보여 주는 Azure Portal 스크린샷](images/session-01/6c-app-insights-live-metrics.png)
 
    요청 그래프에 `/api/chat` 호출이 즉시 반영되는지, **Server response time** 차트에 응답 시간이 함께 측정되는지 확인합니다.
 
 4. **Application Insights** → **Transaction search** → 한 요청 안에 (HTTP 인입 → Cosmos query → Azure OpenAI 호출) span 트리 노출
 
-   <!-- 📸 capture: images/session-01/6d-app-insights-transaction-search-span-tree.png -->
    ![Application Insights Transaction search 의 span 트리를 보여 주는 Azure Portal 스크린샷](images/session-01/6d-app-insights-transaction-search-span-tree.png)
    ![Application Insights Transaction search 의 span 트리 상세 (2)](images/session-01/6d-app-insights-transaction-search-span-tree-01.png)
    ![Application Insights Transaction search 의 span 트리 상세 (3)](images/session-01/6d-app-insights-transaction-search-span-tree-02.png)
@@ -1021,7 +986,6 @@ curl -X POST "https://$API_FQDN/api/chat" \
 
 5. **Key Vault** → **Access control (IAM)** → User Assigned Managed Identity 가 `Key Vault Secrets User` 역할 보유 확인
 
-   <!-- 📸 capture: images/session-01/6e-key-vault-iam-secrets-user.png -->
    ![Key Vault 에 Key Vault Secrets User 역할이 부여된 것을 보여 주는 Azure Portal 스크린샷](images/session-01/6e-key-vault-iam-secrets-user.png)
 
    **Role assignments** 목록에서 User Assigned Managed Identity 가 `Key Vault Secrets User` 역할을 보유하는지 확인합니다.
@@ -1034,7 +998,6 @@ curl -X POST "https://$API_FQDN/api/chat" \
    | summarize p95 = percentile(duration, 95), count() by bin(timestamp, 1m)
    ```
 
-   <!-- 📸 capture: images/session-01/6f-app-insights-logs-kql-p95.png -->
    ![Application Insights Logs 의 KQL 쿼리 결과 표를 보여 주는 Azure Portal 스크린샷](images/session-01/6f-app-insights-logs-kql-p95.png)
    ![Application Insights Logs 의 KQL 쿼리 결과 표 (2)](images/session-01/6f-app-insights-logs-kql-p95-01.png)
    ![Application Insights Logs 의 KQL 쿼리 결과 표 (3)](images/session-01/6f-app-insights-logs-kql-p95-02.png)
@@ -1045,35 +1008,6 @@ curl -X POST "https://$API_FQDN/api/chat" \
 > Cosmos DB Data Explorer 진입 시 401 응답이 나오는 경우가 있습니다. **Cosmos data plane RBAC 가 부여되지 않은 상태** 입니다. 본인에게 임시로 `Cosmos DB Built-in Data Contributor` 역할을 부여하는 방법은 [docs/pitfalls/common.md](../pitfalls/common.md#cosmos-data-plane-rbac--control-plane-session-01session-04) 를 참고합니다.
 
 ---
-
-## 주의
-
-> [!CAUTION]
-> **Cosmos serverless 는 capability 가 아니라 `capacityMode`** — API 버전 `2024-05-15-preview` 이후로는 `EnableServerless` capability 지정이 거부됩니다. 실측 에러 — `BadRequest: Capability EnableServerless is not allowed in API version beyond 2024-05-15-preview. Use CapacityMode instead`. 본 워크샵의 `cosmos-account.bicep` 은 `properties.capacityMode: 'Serverless'` 를 사용하므로 [1.4 Cosmos DB account · database · container](#14-cosmos-db-account--database--container) 처럼 `capacityMode: 'Serverless'` 를 그대로 전달합니다.
-
-> [!CAUTION]
-> **비동기 인증은 `aiohttp` 가 필요** — `azure.identity.aio.DefaultAzureCredential` 은 async HTTP transport 로 `aiohttp` 를 요구합니다. `pyproject.toml` 에 없으면 컨테이너 부팅 시 실측 에러 `ImportError: aiohttp package is not installed. Use pip install aiohttp to install it.` 로 앱이 시작되지 않습니다. 시작본의 `apps/api/pyproject.toml` 에는 이미 `aiohttp>=3.10.0` 이 포함되어 있습니다.
-
-> [!CAUTION]
-> **gpt-5-mini 는 `max_tokens` · 커스텀 `temperature` 미지원** — gpt-5 계열 reasoning 모델은 `max_tokens` 를 거부합니다. 실측 에러 — `Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.`. `temperature` 도 기본값 (1) 만 허용됩니다. [2.2 Azure OpenAI 클라이언트](#22-azure-openai-클라이언트--appsapisrcclientsaoaipy) 의 `chat_with_context` 처럼 `max_completion_tokens` 를 사용하고 `temperature` 는 생략합니다.
-
-> [!CAUTION]
-> **Cosmos data plane RBAC 와 control plane RBAC 는 별개** — `Cosmos DB Account Reader` 역할만으로는 데이터 읽기 · 쓰기가 차단됩니다. Data Explorer 도 본인 계정에 명시적인 data plane RBAC 가 필요합니다.
-
-> [!CAUTION]
-> **OpenTelemetry 자동 계측은 app 생성 전에 활성화** — `configure_azure_monitor` 를 `lifespan` (= `app = FastAPI()` 생성 후) 에서 호출하면 FastAPI 요청 span 이 기록되지 않습니다. FastAPI 자동 계측이 `FastAPI.__init__` 을 패치하는 방식이라 이미 만들어진 app 에는 적용되지 않기 때문입니다. 실측 — 트래픽은 200 OK 인데 Application Insights `requests` 0 건, 메트릭만 기록. [2.5 FastAPI 엔트리](#25-fastapi-엔트리--appsapisrcmainpy) 처럼 import 최상단에서 계측을 켭니다. 또한 `azure-monitor-opentelemetry` 는 httpx · aiohttp 를 자동 계측하지 않으므로, Azure OpenAI (httpx) · Cosmos (aiohttp) 호출의 dependency span 을 위해 `opentelemetry-instrumentation-httpx` · `opentelemetry-instrumentation-aiohttp-client` 를 명시적으로 instrument 합니다 ([주의](#주의) · [docs/pitfalls/common.md](../pitfalls/common.md) 참고).
-
-> [!WARNING]
-> **Cosmos vector policy 는 컨테이너 생성 시점에만 설정 가능** — 나중에 추가하려면 컨테이너 drop & recreate 가 필요합니다. 본 워크샵의 Bicep 은 컨테이너 생성 시점에 vector policy 를 포함합니다.
-
-> [!WARNING]
-> **ARM Mac 환경에서 `--platform linux/amd64` 옵션 필수** — 누락하면 Azure Container Apps 안에서 `exec format error` 가 silent 하게 발생합니다.
-
-> [!CAUTION]
-> **`az configure --defaults group=...` 잔여 효과** — 이전에 default group 을 설정한 적이 있다면 `az acr login` 등의 명령이 잘못된 컨텍스트를 받습니다. 막힐 때는 `az configure --defaults group=""` 로 초기화 후 재시도합니다.
-
-> [!NOTE]
-> **Internal ingress 의 HTTP 404 응답** — Azure Container Apps 에서 `externalIngress = false` 로 두면 외부 호출이 TCP 거부가 아닌 HTTP 404 응답으로 돌아옵니다. "앱이 죽었나?" 로 오해하기 쉬우므로 본 세션은 `externalIngress = true` 로 시작합니다.
 
 > [!TIP]
 > 진행 중 막혔다면 완성본 코드를 그대로 덮어쓰고 어디가 달랐는지 직접 비교할 수 있습니다.
@@ -1092,12 +1026,4 @@ curl -X POST "https://$API_FQDN/api/chat" \
 
 ---
 
-## 참고 자료
-
-- Microsoft Learn — [Develop AI solutions with Azure Cosmos DB](https://learn.microsoft.com/ko-kr/training/paths/develop-ai-solutions-azure-cosmos-db/)
-- Microsoft Learn — [Azure Container Apps overview](https://learn.microsoft.com/ko-kr/azure/container-apps/overview)
-- 본 저장소 — `infra/sessions/01-rag-mvp/main.bicep`, `apps/api/`, `apps/web/`, `scripts/seed_cosmos.py`
-
----
-
-👈 [session-00 — 사전 설정 & 구독 준비](./00-setup.md) | [session-02 — PostgreSQL pgvector 비교](./02-pgvector.md) 👉
+👈 [session-00](./00-setup.md) | [session-02](./02-pgvector.md) 👉

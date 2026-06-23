@@ -1,6 +1,6 @@
 # 공통 함정 모음
 
-본 워크샵 전체에서 학습자가 자주 막혔던 함정을 모았습니다. 각 세션 문서의 `## 주의` 와 중복되더라도, 디버깅 시 한곳에서 빠르게 검색할 수 있도록 합쳐둡니다.
+본 문서는 챌린지 전체 함정·주의의 **단일 Source of Truth** 입니다. 세션 문서에는 더 이상 별도 `## 주의` 섹션이 없으며, 진행 중 막혔을 때는 여기서 한곳에서 검색합니다. 카테고리별로 묶고 각 항목에 가장 자주 마주치는 세션 태그 (`session-NN`) 를 달아두었습니다.
 
 > [!NOTE]
 > 출처 표기 (`session-NN`) 는 가장 자주 마주치는 세션입니다. 다른 세션에서도 발생할 수 있습니다.
@@ -94,11 +94,28 @@
 - 원인 — 같은 Azure OpenAI 계정에 두 개의 모델 deployment 를 동시에 생성하려 함
 - 회피 — Bicep `dependsOn: [aoaiChatDeployment]` 로 두 번째 deployment 가 순차적으로 실행되도록 지정
 
+### `koreacentral` 리전 모델 미가용 (session-00)
+
+- 증상 — 배포 시 일부 모델이 `koreacentral` 에서 가용하지 않아 deployment 생성이 실패
+- 원인 — Azure OpenAI 모델은 리전별로 가용 여부가 다름. 기본 리전 `koreacentral` 에 원하는 모델이 없을 수 있음
+- 회피 — 배포 명령에 `--parameters aoaiLocation=eastus` (또는 `japaneast`) 를 추가해 Azure OpenAI 리전만 분리
+
+  ```bash
+  az deployment sub create ... \
+    --parameters aoaiLocation=eastus
+  ```
+
+### Azure OpenAI 액세스 미승인 구독에서 배포 불가 (session-00)
+
+- 증상 — Azure OpenAI 자원 배포가 액세스 권한 부재로 거부됨
+- 원인 — Azure OpenAI 자원은 액세스 승인 ([aka.ms/oaiapply](https://aka.ms/oaiapply)) 이 완료된 구독에서만 배포 가능
+- 회피 — 승인까지 시간이 걸릴 수 있으므로 [PREREQUISITES.md](../../PREREQUISITES.md) 의 Azure OpenAI 액세스 신청 단계를 가장 먼저 진행
+
 ### 모델 deprecation — 신규 deployment 생성 차단 (session-00)
 
 - 증상 — `az deployment sub what-if` preflight 에서 `ServiceModelDeprecated` 오류. 실측 사례 — `gpt-4o-mini` (version `2024-07-18`) 가 2026-03-31 부로 신규 deployment 생성 차단 (기존 deployment 의 추론은 2026-10-01 까지 동작하지만 새로 만들 수 없음)
 - 원인 — Azure OpenAI 모델은 버전별 수명 주기 (deprecation 일정) 가 있어, 신규 deployment 생성 차단일이 지나면 같은 Bicep 이라도 재배포가 실패함
-- 회피 — 현재 배포 가능한 모델을 확인하고 후속 모델로 교체. 본 워크샵은 `gpt-5-mini` (version `2025-08-07`) 로 교체함
+- 회피 — 현재 배포 가능한 모델을 확인하고 후속 모델로 교체. 본 챌린지는 `gpt-5-mini` (version `2025-08-07`) 로 교체함
 
   ```bash
   az cognitiveservices model list -l koreacentral \
@@ -171,6 +188,18 @@
 - 원인 — Bicep 으로 플래그를 쓸 때 contentType 을 `application/vnd.microsoft.appconfig.ff+json` 으로만 지정. CLI·SDK 는 charset 까지 정확히 일치해야 feature flag 로 인식
 - 회피 — `contentType: 'application/vnd.microsoft.appconfig.ff+json;charset=utf-8'`
 
+### PgBouncer 는 Burstable 등급 미지원 (session-02)
+
+- 증상 — 서버 측 PgBouncer 를 켜면 `ServerParameterToCMSPgBouncerNotSupportedForBurstable` 오류로 배포 실패
+- 원인 — PostgreSQL Flexible Server 의 내장 PgBouncer 는 Burstable 컴퓨트 등급에서 지원되지 않음. 학습용으로 Burstable 등급을 사용하면 충돌
+- 회피 — 서버 측 PgBouncer 대신 클라이언트 측 `psycopg_pool` 로 연결 풀을 관리
+
+### PostgreSQL 자식 자원 동시 생성 시 409 Conflict (session-02)
+
+- 증상 — 관리자 · 서버 파라미터 · firewall rule · 데이터베이스를 동시에 생성하면 서버가 Updating 상태라 `409 Conflict`
+- 원인 — Flexible Server 의 자식 자원들을 한 번에 PUT 하면 서버가 아직 이전 변경을 적용 중이라 충돌
+- 회피 — `main.bicep` 의 `dependsOn` 으로 자식 자원 생성을 순차화
+
 ---
 
 ## 컨테이너 · 이미지
@@ -196,7 +225,7 @@
   var placeholderImage = 'mcr.microsoft.com/k8se/quickstart:latest'
   var resolvedImage = empty(containerImage) ? placeholderImage : '${acrLoginServer}/${containerImage}'
   ```
-- 함의 — placeholder 이미지는 본 워크샵이 지정한 포트 (8000 · 3000) 를 듣지 않으므로 첫 revision 이 `ActivationFailed` 로 표시될 수 있음. deployment 자체는 `Succeeded` 이고 `az containerapp update` 로 실제 이미지를 올리면 새 revision 이 `Healthy` 가 됨. 배포 실패로 오해하지 않음
+- 함의 — placeholder 이미지는 본 챌린지가 지정한 포트 (8000 · 3000) 를 듣지 않으므로 첫 revision 이 `ActivationFailed` 로 표시될 수 있음. deployment 자체는 `Succeeded` 이고 `az containerapp update` 로 실제 이미지를 올리면 새 revision 이 `Healthy` 가 됨. 배포 실패로 오해하지 않음
 
 ### `az configure --defaults group=...` 잔여 효과 (session-01)
 
@@ -307,6 +336,18 @@
 - 원인 — TAG 필드 값에 `-` 가 있는데 escape 처리하지 않음. 쿼리 파서가 잘못 해석
 - 회피 — TAG 값에서 하이픈을 `\\-` 로 escape (Python f-string 안에서는 `\\\\-` 형태)
 
+### RediSearch COSINE 은 유사도가 아니라 distance 를 반환 (session-03)
+
+- 증상 — 유사도 컷오프를 적용했는데 캐시가 전부-hit 또는 전부-miss 가 되고 원인 추적이 어려움
+- 원인 — RediSearch 의 COSINE 은 distance (0 = 동일 ~ 2 = 반대) 를 반환. 유사도와 방향이 반대라 컷오프 비교를 그대로 하면 전부 통과하거나 전부 탈락
+- 회피 — 유사도 컷오프는 `1 - distance` 로 환산해 비교 (예: 유사도 ≥ 0.62 → `1 - distance ≥ 0.62`)
+
+### FT.SEARCH 는 Hash 키만 인덱싱 (session-03)
+
+- 증상 — 캐시가 항상 miss. 값은 저장되는데 검색에 잡히지 않음
+- 원인 — RediSearch 인덱스는 인덱스 prefix 와 일치하는 Redis Hash 키만 인덱싱. 일반 `SET` 으로 저장한 값은 인덱싱되지 않음
+- 회피 — 임베딩 · 답변 · 출처를 한 Hash 키에 함께 저장 (`hset`)
+
 ---
 
 ## 비동기 · 메시징
@@ -353,12 +394,18 @@
 
 - 증상 — 함수의 `_upsert_pg` 가 `psycopg.ConnectionTimeout` (연결 거부가 아니라 ~132초 timeout). Cosmos 적재는 되는데 PG 만 빔. 메시지가 max delivery 5회 재시도 후 DLQ
 - 원인 — session-02 PG 방화벽이 dev IP 만 허용. Azure 호스팅 함수의 outbound 가 차단됨 (drop 은 거부가 아닌 timeout 으로 나타남)
-- 회피 — PG 에 "Allow Azure services" 규칙 추가 (시작·끝 IP 모두 `0.0.0.0`). dev 워크샵 수준의 단순 해법이며 운영에선 VNet 통합 권장
+- 회피 — PG 에 "Allow Azure services" 규칙 추가 (시작·끝 IP 모두 `0.0.0.0`). dev 챌린지 수준의 단순 해법이며 운영에선 VNet 통합 권장
 
   ```bash
   az postgres flexible-server firewall-rule create -g <rg> -n <pg> \
     --rule-name AllowAllAzureServices --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0
   ```
+
+### Event Grid → Service Bus 전달 권한은 System Topic 의 관리 ID 에 (session-04)
+
+- 증상 — Event Grid 구독이 정상으로 보이는데 Service Bus 로 전달이 0 건
+- 원인 — `Azure Service Bus Data Sender` 역할을 User Assigned Managed Identity 에 부여. Event Grid → Service Bus 전달에 쓰이는 ID 는 System Topic 의 SystemAssigned 관리 ID 임
+- 회피 — System Topic 의 SystemAssigned 관리 ID 에 `Azure Service Bus Data Sender` 를 부여. 전달이 0 이면 이 역할 부여를 먼저 확인
 
 ---
 
@@ -399,6 +446,30 @@
 
   `pyproject.toml` 에 `opentelemetry-instrumentation-httpx` · `opentelemetry-instrumentation-aiohttp-client` 를 추가
 
+### `set_attribute` (customDimensions) ≠ OpenTelemetry 메트릭 (customMetrics) (session-06)
+
+- 증상 — 토큰 · 캐시 관련 KQL 쿼리가 빈 결과
+- 원인 — `set_attribute` 로 남긴 값은 customDimensions 에 들어가고, 집계 시계열은 Counter 메트릭 → customMetrics.value 로 들어감. 둘을 혼동하면 메트릭 발행 자체가 빠짐
+- 회피 — 집계가 필요한 값은 attribute 가 아니라 Counter 메트릭으로 발행. KQL 이 빈 결과면 메트릭 발행 누락을 먼저 확인
+
+### 커스텀 루트 span 을 만들지 않음 (session-06)
+
+- 증상 — Transaction search 의 span 트리에 루트가 중복으로 보임
+- 원인 — FastAPI 자동 계측이 이미 SERVER (requests) span 을 루트로 만드는데, 또 루트 span 을 만들면 중복
+- 회피 — RAG span 들은 `start_as_current_span` 으로 열어 자동 request span 의 자식으로 중첩
+
+### 민감 정보를 attribute 에 넣지 않음 (session-06)
+
+- 증상 — 질문 본문 · 답변 같은 민감 정보가 Application Insights 에 영구 기록됨
+- 원인 — span attribute 에 넣은 값은 텔레메트리로 영구 보존
+- 회피 — `user.session_id` 까지만 기록하고 질문 본문 · 답변은 attribute 에 넣지 않음
+
+### 기본 샘플링이 100% 가 아닐 수 있음 (session-06)
+
+- 증상 — 일부 트레이스가 Application Insights 에 보이지 않음
+- 원인 — 기본 sampling 이 100% 가 아니라 일부 트레이스가 드롭됨
+- 회피 — 모든 트레이스를 보려면 `OTEL_TRACES_SAMPLER=always_on` 설정 (메트릭은 샘플링 영향 없음)
+
 ---
 
 ## Azure Kubernetes Service
@@ -428,6 +499,12 @@
 - 원인 — `koreacentral` 의 DSv5 Family 기본 vCPU 가 0. 별도 신청이 필요
 - 회피 — DSv3 (기본 10 vCPU) 사용
 
+### Workload Identity subject 가 정확히 일치해야 함 (session-07)
+
+- 증상 — 파드가 Azure 자원 접근에서 인증 오류. 토큰 교환이 실패
+- 원인 — federatedIdentityCredential 의 subject (`system:serviceaccount:<ns>:<sa>`) 가 매니페스트의 namespace · ServiceAccount 이름과 정확히 일치하지 않음
+- 회피 — subject 의 namespace · ServiceAccount 를 매니페스트와 글자 단위로 맞춤
+
 ---
 
 ## 비용 · 운영
@@ -440,7 +517,7 @@
   - Azure Kubernetes Service LB + Public IP: ~₩1,125/일
   - PostgreSQL B1ms: ~₩700/일
 - 함의 — dev 환경이라도 compute 가 있는 자원은 시간당 누적
-- 회피 — 본 워크샵 진행이 끝나면 즉시 [cleanup.md](../cleanup.md) 수행
+- 회피 — 본 챌린지 진행이 끝나면 즉시 [cleanup.md](../cleanup.md) 수행
 
 ### 컨테이너 이미지는 Resource Group 삭제 후에도 남음
 
@@ -475,5 +552,9 @@
 - **App Configuration Sentinel refresh** 는 30~60초 폴링 방식. 즉시 반영되지 않으므로, 실시간 반영이 필요하면 push 모델을 별도 구성 (session-05)
 - **Windows + psycopg async** — Windows 기본 ProactorEventLoop 에서 `asyncio.run()` 으로 psycopg async 를 돌리면 `Psycopg cannot use the 'ProactorEventLoop'` 로 죽는다. `asyncio.run(main(), loop_factory=asyncio.SelectorEventLoop)` (Python 3.12+) 로 SelectorEventLoop 강제. `seed_both.py` 같은 로컬 스크립트에서 발생 (session-02)
 - **PostgreSQL `SET LOCAL x = %s`** 는 bind 파라미터를 받지 않아 `syntax error at or near "$1"`. 신뢰된 정수는 직접 보간(`f"SET LOCAL hnsw.ef_search = {int(v)}"`)하거나 `SELECT set_config('x', %s, true)` 사용 (session-02)
-- **FastAPI OpenTelemetry 계측은 app 생성 직후(모듈 레벨)에 해야 한다** — `configure_azure_monitor()` 를 lifespan startup 에서 호출하면 `FastAPI.__init__` 패치가 *이미 생성된* app 에 적용 안 돼 **인입 요청 server span(`requests` 테이블)이 통째로 누락**된다. 커스텀 span(`dependencies`)·metric·log 는 잡히는데 `requests` 만 빠져 증상이 헷갈림. 영향: session-06 의 `requests` 기반 알림(오류율·p95)·Workbook P95 에 데이터가 안 들어옴. 해결: `app = FastAPI(...)` **직후 모듈 레벨**에서 `configure_azure_monitor(...)` + `FastAPIInstrumentor.instrument_app(app)` 호출 (session-06)
+- **FastAPI OpenTelemetry 계측은 app 생성 직후(모듈 레벨)에 해야 한다** — `configure_azure_monitor()` 를 lifespan startup 에서 호출하면 `FastAPI.__init__` 패치가 **이미 생성된** app 에 적용 안 돼 **인입 요청 server span(`requests` 테이블)이 통째로 누락**된다. 커스텀 span(`dependencies`)·metric·log 는 잡히는데 `requests` 만 빠져 증상이 헷갈림. 영향: session-06 의 `requests` 기반 알림(오류율·p95)·Workbook P95 에 데이터가 안 들어옴. 해결: `app = FastAPI(...)` **직후 모듈 레벨**에서 `configure_azure_monitor(...)` + `FastAPIInstrumentor.instrument_app(app)` 호출 (session-06)
 - **`azure-appconfiguration-provider` 의 `load()` kwarg 는 `feature_flag_enabled`(단수)** — `feature_flags_enabled`(복수) 오타를 넘기면 `load()` 가 `**kwargs` 라 에러 없이 무시하고 **피처 플래그를 아예 로드하지 않는다**. 결과적으로 `is_enabled()` 가 항상 false (플래그·캐시 토글이 통째로 죽음). 증상이 조용해서 진단이 어려움 (session-05)
+- **App Configuration `feature_flag_refresh_enabled=True` 누락 시 토글 미반영** — refresh 설정이 빠지면 포털에서 피처 플래그를 토글해도 앱에 반영되지 않는다. 가장 흔한 함정 (session-05)
+- **`is_enabled()` 는 호출마다 평가** — hot path 에서 과도하게 호출하지 않도록 요청 시작 시 1회 평가 후 결과를 재사용 (session-05)
+- **`identity.type='UserAssigned'` 자원은 `identity.principalId` 를 노출하지 않음** — 최상위 `identity.principalId` 대신 `userAssignedIdentities[id].principalId` 로 접근 (session-04)
+- **`az redisenterprise show` 는 평탄화된 응답** — 일반 ARM 자원의 `properties.xxx` 가 아니라 `resourceState` · `hostName` 등이 최상위에 위치 (session-03)

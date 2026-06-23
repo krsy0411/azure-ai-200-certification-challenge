@@ -1,41 +1,12 @@
-# session-02 — PostgreSQL pgvector 비교
+# session-02 (PostgreSQL pgvector 비교)
 
-> **관련 Microsoft Learn 학습 경로**
->
-> - [Develop AI solutions with Azure Database for PostgreSQL](https://learn.microsoft.com/ko-kr/training/paths/develop-ai-solutions-azure-database-postgresql/)
+👈 [챌린지 홈](../../README.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md), [session-01](./01-rag-mvp.md) 완료 — Resource Group · Azure OpenAI · Cosmos DB (벡터 인덱스 + 시드 데이터) · User Assigned Managed Identity 가 본인 구독에 존재
 > - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
-
----
-
-## 0. 이 세션에서 경험하는 내용
-
-- **한 문장 골** — Cosmos DB 와 PostgreSQL pgvector 두 벡터 백엔드에 같은 데이터를 적재하고 검색해, 두 백엔드의 트레이드오프를 직접 측정한 숫자로 비교
-- **새로 프로비저닝되는 자원**
-  - PostgreSQL Flexible Server (Burstable B1ms 등급, Entra ID 전용 인증)
-  - 데이터베이스 `appdb`
-  - 서버 파라미터 `azure.extensions = VECTOR` — pgvector extension 사용 사전 허용
-  - 본인 PC IP 를 허용하는 firewall rule
-  - Entra ID 관리자 2명 — 본인 계정 + User Assigned Managed Identity
-- **이 세션의 학습 포인트**
-  - 완성된 PostgreSQL Bicep 모듈 5개를 `main.bicep` 에서 직접 조립 (호출). 서버 상태 변경 자식 자원의 직렬화 (`dependsOn`) 가 핵심
-  - `VectorStore` 추상화에 PostgreSQL 구현을 채워, `STORE_BACKEND` 환경변수로 백엔드를 전환
-  - `halfvec(3072)` + HNSW + `hnsw.ef_search` 로 정확도 / 속도 트레이드오프를 측정
-- **사용해볼 SDK / CLI**
-  - `psql` — Entra ID 토큰을 비밀번호로 사용
-  - `psycopg` async + `psycopg_pool` — 클라이언트 측 연결 풀
-  - `pgvector.psycopg.register_vector_async` — Python ↔ `halfvec` 타입 매핑
-- **확인할 지표 / 데이터**
-  - PostgreSQL Flexible Server → Server parameters (Portal) — `azure.extensions` 가 `VECTOR` 포함
-  - PostgreSQL Flexible Server → Metrics (Portal) — seed 직후 CPU · 활성 연결 수 스파이크
-  - psql `EXPLAIN ANALYZE` — 벡터 검색 실행 계획 (인덱스 사용 여부)
-
-> [!TIP]
-> 이 세션은 `Bicep 모듈 조립 → 배포 → 데이터 초기화 → 코드 채우기 → 비교 측정 → Portal · psql 확인` 흐름으로 진행합니다.
 
 ---
 
@@ -67,11 +38,14 @@ Copy-Item -Path save-points/session-02/start/* -Destination workshop -Recurse -F
 
 `infra/modules/session-02/` 에 완성되어 있는 모듈입니다.
 
-- `postgres-flexible-server.bicep` — Burstable B1ms 등급, Entra ID 전용 인증 (`passwordAuth` 비활성)
-- `postgres-aad-admin.bicep` — Entra ID 관리자 부여
-- `postgres-server-config.bicep` — `azure.extensions = VECTOR` 사전 허용
-- `postgres-firewall-rule.bicep` — 본인 PC IP 허용
-- `postgres-database.bicep` — `appdb` 데이터베이스
+```text
+infra/modules/session-02/
+├── postgres-flexible-server.bicep   # Burstable B1ms 등급, Entra ID 전용 인증 (passwordAuth 비활성)
+├── postgres-aad-admin.bicep         # Entra ID 관리자 부여
+├── postgres-server-config.bicep     # azure.extensions = VECTOR 사전 허용
+├── postgres-firewall-rule.bicep     # 본인 PC IP 허용
+└── postgres-database.bicep          # appdb 데이터베이스
+```
 
 > [!WARNING]
 > PostgreSQL Flexible Server 는 서버 상태를 바꾸는 자식 자원 (관리자 · 서버 파라미터 · firewall rule · 데이터베이스) 을 동시에 생성하면 409 Conflict (server busy) 가 발생합니다. 아래 조립에서 각 모듈의 `dependsOn` 으로 하나가 끝난 후 다음 하나를 만들도록 직렬화합니다.
@@ -415,7 +389,6 @@ uv run --project apps/api python scripts/seed_both.py
 
 1. **PostgreSQL Flexible Server** → **Server parameters** → 검색창에 `azure.extensions` 입력 → 값에 `VECTOR` 가 포함되어 있는지 확인
 
-   <!-- 📸 capture: images/session-02/3a-postgres-server-parameters-azure-extensions.png -->
    ![PostgreSQL Flexible Server 의 Server parameters 에서 azure.extensions 값을 보여 주는 Azure Portal 스크린샷](images/session-02/3a-postgres-server-parameters-azure-extensions.png)
 
    `azure.extensions` 파라미터의 **VALUE** 에 `VECTOR` 가 포함되어 있는지 확인합니다. 이 allowlist 에 없으면 `CREATE EXTENSION vector` 가 실패합니다.
@@ -424,7 +397,6 @@ uv run --project apps/api python scripts/seed_both.py
    - `CPU percent` — seed 실행 직후 스파이크
    - `Active Connections` — 풀 크기 만큼 일시적으로 증가
 
-   <!-- 📸 capture: images/session-02/3b-postgres-metrics-cpu-active-connections.png -->
    ![PostgreSQL Flexible Server 의 CPU percent 와 Active Connections 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-02/3b-postgres-metrics-cpu-active-connections.png)
 
    seed 실행 직후 `CPU percent` 가 스파이크를 그리는지, `Active Connections` 가 연결 풀 크기만큼 일시적으로 증가했다가 내려오는지 확인합니다.
@@ -456,7 +428,7 @@ uv run --project apps/api python scripts/seed_both.py
     Execution Time: 2.576 ms
    ```
 
-   실행 계획에 `Seq Scan on chunks` 가 보이는데, 이는 본 워크샵 데이터가 120 건으로 작아 플래너가 HNSW 인덱스 대신 순차 스캔 (정확 검색) 을 고른 것이며 정상입니다 ([주의](#주의) 섹션 · [2.4](#24-비교-실행) 의 TIP 참고). 데이터가 커지거나 같은 세션에서 `SET LOCAL enable_seqscan = off` 로 순차 스캔을 강제하면 `Index Scan using chunks_embedding_hnsw` 가 실행 계획에 나타납니다.
+   실행 계획에 `Seq Scan on chunks` 가 보이는데, 이는 본 챌린지 데이터가 120 건으로 작아 플래너가 HNSW 인덱스 대신 순차 스캔 (정확 검색) 을 고른 것이며 정상입니다 ([2.4](#24-비교-실행) 의 TIP · [함정 모음](../pitfalls/common.md) 참고). 데이터가 커지거나 같은 세션에서 `SET LOCAL enable_seqscan = off` 로 순차 스캔을 강제하면 `Index Scan using chunks_embedding_hnsw` 가 실행 계획에 나타납니다.
 
 ---
 
@@ -475,29 +447,6 @@ uv run --project apps/api python scripts/seed_both.py
 
 ---
 
-## 주의
-
-> [!CAUTION]
-> **`vector(3072)` HNSW 는 2000 차원 한계로 인덱스 생성 실패** — text-embedding-3-large 가 반환하는 3072 차원을 HNSW 로 색인하려면 `halfvec(3072)` 와 `halfvec_cosine_ops` 를 사용해야 합니다. `vector` 타입은 indexed search 시 2000 차원 한계가 있습니다.
-
-> [!WARNING]
-> **PgBouncer 는 Burstable 등급에서 미지원** — `ServerParameterToCMSPgBouncerNotSupportedForBurstable` 오류가 발생합니다. 본 워크샵은 학습용 Burstable 등급을 사용하므로, 서버 측 PgBouncer 대신 클라이언트 측 `psycopg_pool` 로 연결 풀을 관리합니다.
-
-> [!WARNING]
-> **`register_vector_async` chicken-and-egg** — 풀 초기화 콜백에서 `register_vector_async` 를 호출하는데, 그 시점에 데이터베이스에 `vector` extension 이 없으면 풀 초기화 자체가 실패합니다. [2.2](#22-postgresql-데이터베이스-초기화) 의 `CREATE EXTENSION vector` 를 먼저 실행한 뒤 앱을 시작합니다.
-
-> [!WARNING]
-> **자식 자원 동시 생성 시 409 Conflict** — 관리자 · 서버 파라미터 · firewall rule · 데이터베이스를 동시에 생성하면 서버가 Updating 상태라 충돌합니다. `main.bicep` 의 `dependsOn` 으로 직렬화되어 있는지 확인합니다.
-
-> [!NOTE]
-> **서버 이름 접미사** — PostgreSQL Flexible Server 이름은 글로벌 unique 라 `uniqueString` 접미사가 붙습니다. `az postgres flexible-server list` 로 실제 이름과 도메인을 조회해 사용합니다 ([1.11](#111-배포-완료-확인)).
-
-> [!WARNING]
-> **psql 접속이 막힐 때** — 다음을 확인합니다.
-> - `userObjectId` 를 배포 명령에 넘기지 않으면 본인이 Entra ID 관리자로 등록되지 않아 접속이 거부됩니다 ([1.3](#13-entra-id-관리자--배포-사용자) 의 관리자 부여가 `if (!empty(userObjectId))` 조건부). 배포 시 `userObjectId=$OID` 를 반드시 전달합니다
-> - 배포 후 네트워크가 바뀌어 IP 가 달라지면 (다른 Wi-Fi · VPN 등) firewall 에 막혀 접속이 timeout 됩니다. `az postgres flexible-server firewall-rule create` 로 새 IP 를 추가하거나 `devClientIpAddress` 를 갱신해 재배포합니다
-> - Entra ID 토큰은 약 1시간 후 만료됩니다. `PGPASSWORD` 를 `az account get-access-token --resource https://ossrdbms-aad.database.windows.net` 으로 재발급한 뒤 다시 접속합니다
-
 > [!TIP]
 > 진행 중 막혔다면 완성본 코드를 그대로 덮어쓰고 어디가 달랐는지 직접 비교할 수 있습니다.
 >
@@ -515,12 +464,4 @@ uv run --project apps/api python scripts/seed_both.py
 
 ---
 
-## 참고 자료
-
-- Microsoft Learn — [Develop AI solutions with Azure Database for PostgreSQL](https://learn.microsoft.com/ko-kr/training/paths/develop-ai-solutions-azure-database-postgresql/)
-- pgvector — [github.com/pgvector/pgvector](https://github.com/pgvector/pgvector)
-- 본 저장소 — `infra/sessions/02-pgvector/main.bicep`, `apps/api/src/stores/pg_store.py`, `scripts/seed_both.py`
-
----
-
-👈 [session-01 — RAG MVP on Azure Container Apps + Key Vault + OpenTelemetry](./01-rag-mvp.md) | [session-03 — Managed Redis 시맨틱 캐시](./03-redis-cache.md) 👉
+👈 [session-01](./01-rag-mvp.md) | [session-03](./03-redis-cache.md) 👉

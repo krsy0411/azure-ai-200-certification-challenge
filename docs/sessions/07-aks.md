@@ -1,8 +1,6 @@
-# session-07 — Azure Kubernetes Service 대안 배포
+# session-07 (Azure Kubernetes Service 대안 배포)
 
-> **관련 Microsoft Learn 학습 경로**
->
-> - [Deploy and monitor apps on Azure Kubernetes Service](https://learn.microsoft.com/ko-kr/training/paths/deploy-monitor-apps-azure-kubernetes-service/)
+👈 [챌린지 홈](../../README.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
@@ -10,27 +8,6 @@
 > - [session-00](./00-setup.md) ~ [session-06](./06-observability.md) 완료 — Azure OpenAI · Cosmos DB · Azure Container Registry(apps/api 이미지) · User Assigned Managed Identity · Log Analytics Workspace 가 본인 구독에 존재
 > - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
 > - `kubectl` 1.30+ 설치 확인 — [PREREQUISITES.md](../../PREREQUISITES.md) 참고
-
----
-
-## 0. 이 세션에서 경험하는 내용
-
-- **한 문장 골** — [session-01](./01-rag-mvp.md) 에서 Azure Container Apps 에 올렸던 **같은 RAG API(apps/api) 를 Azure Kubernetes Service 에 Deployment + Service 로 재배포** 해, 두 호스팅 모델의 트레이드오프를 K8s 매니페스트 · `kubectl` · Container Insights 로 직접 비교
-- **새로 프로비저닝되는 자원**
-  - AKS 클러스터 (Standard_D2s_v3 노드 2개, Entra ID + Azure RBAC, `disableLocalAccounts=true`, CNI Overlay, Workload Identity)
-  - AKS 전용 User Assigned Managed Identity (control plane + kubelet) + `AcrPull` + `Managed Identity Operator`
-  - Container Insights — DCR + DCRA 명시 선언
-  - 워크로드용 federated identity credential (session-00 User Assigned Managed Identity ↔ `apps-api-sa`)
-- **이 세션의 학습 포인트**
-  - 완성된 AKS 모듈을 `main.bicep` 에서 조립, K8s Deployment + Service 매니페스트 작성
-  - **Workload Identity** — 시크릿 없이 파드가 DefaultAzureCredential 로 Azure OpenAI · Cosmos 접근
-- **사용해볼 SDK / CLI**
-  - `kubectl` — `apply` · `get` · `logs` · `describe`
-  - `az aks get-credentials` (`--admin` 사용 안 함, Entra ID + Azure RBAC)
-- **Portal 에서 확인할 지표 / 데이터**
-  - AKS → Workloads — Deployment · Pod
-  - AKS → Insights — 노드 · Pod 메트릭 (Container Insights 동작 검증)
-  - AKS → Logs (KQL) — `ContainerLogV2`
 
 ---
 
@@ -60,10 +37,18 @@ Copy-Item -Path save-points/session-07/start/* -Destination workshop -Recurse -F
 
 ### 1.1 호출할 모듈 한눈에 보기
 
-- `aks-cluster.bicep` — Workload Identity·Entra RBAC·disableLocalAccounts·CNI Overlay·omsagent
-- `aks-container-insights-dcr.bicep` · `aks-container-insights-dcra.bicep` — Container Insights
-- `federated-identity-credential.bicep` — 워크로드 SA ↔ session-00 User Assigned Managed Identity 신뢰 연결
-- `role-assignment-acrpull.bicep` · `role-assignment-mi-operator.bicep` · `role-assignment-aks-cluster-user.bicep`
+`infra/modules/session-07/` 에 완성되어 있는 모듈입니다.
+
+```text
+infra/modules/session-07/
+├── aks-cluster.bicep                    # Workload Identity·Entra RBAC·disableLocalAccounts·CNI Overlay·omsagent
+├── aks-container-insights-dcr.bicep     # Container Insights — DCR
+├── aks-container-insights-dcra.bicep    # Container Insights — DCRA
+├── federated-identity-credential.bicep  # 워크로드 SA ↔ session-00 User Assigned Managed Identity 신뢰 연결
+├── role-assignment-acrpull.bicep        # AKS UAMI 에 AcrPull
+├── role-assignment-mi-operator.bicep    # AKS UAMI 에 Managed Identity Operator
+└── role-assignment-aks-cluster-user.bicep # 본인 계정에 Cluster User Role
+```
 
 ### 1.2 역할 + AKS 클러스터
 
@@ -173,9 +158,13 @@ output acrName string = acrName
 ```bash
 # DSv5 는 koreacentral 기본 vCPU 할당량이 0 이므로 DSv3 사용. 최소 4 vCPU 가용 확인
 az vm list-usage --location koreacentral -o table | grep -E "DSv3"
+```
 
+```bash
 az bicep build --file infra/sessions/07-aks/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
+```
 
+```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
 az deployment group create \
   --resource-group rg-ai200ws-dev \
@@ -355,7 +344,6 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
 1. **AKS** → **Workloads** → **Deployments** → `apps-api` 가 2/2 Ready
 
-   <!-- 📸 capture: images/session-07/3a-aks-workloads-deployment-ready.png -->
    <!--
    ![apps-api Deployment 가 2/2 Ready 상태인 Workloads 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3a-aks-workloads-deployment-ready.png)
 
@@ -364,7 +352,6 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
 2. **AKS** → **Services and ingresses** → `apps-api` 의 External IP 노출
 
-   <!-- 📸 capture: images/session-07/3b-aks-service-external-ip.png -->
    <!--
    ![apps-api Service 에 External IP 가 할당된 Services and ingresses 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3b-aks-service-external-ip.png)
 
@@ -373,7 +360,6 @@ curl -sX POST "http://$LB_IP/api/chat" \
 
 3. **AKS** → **Insights** → 노드 · Pod 메트릭 (Container Insights 동작 증거)
 
-   <!-- 📸 capture: images/session-07/3c-aks-insights-node-pod-metrics.png -->
    <!--
    ![노드와 Pod 의 CPU·메모리 메트릭 차트가 표시된 AKS Insights 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3c-aks-insights-node-pod-metrics.png)
 
@@ -381,7 +367,7 @@ curl -sX POST "http://$LB_IP/api/chat" \
    -->
 
    > [!WARNING]
-   > 이 화면이 비어 있다면 DCR + DCRA 누락 함정입니다 — [주의](#주의) 참고.
+   > 이 화면이 비어 있다면 DCR + DCRA 누락 함정입니다 — [함정 모음](../pitfalls/common.md#azure-kubernetes-service) 참고.
 
 4. **AKS** → **Logs** 에서 KQL 실행
 
@@ -398,7 +384,6 @@ curl -sX POST "http://$LB_IP/api/chat" \
    > [!WARNING]
    > `container-insights-config.yaml`(`containerlog_schema_version=v2`) 을 적용하지 않으면 컨테이너 stdout 로그가 신규 `ContainerLogV2` 가 아니라 레거시 `ContainerLog` 테이블로 수집되어 이 KQL 이 빈 결과로 보입니다. DCR 의 `enableContainerLogV2` 설정만으로는 전환되지 않으며, 에이전트 ConfigMap 의 `containerlog_schema_version=v2` 가 실제 스위치입니다. 빈 결과면 `ContainerLog`(V1) 테이블을 조회해 로그가 거기로 가고 있지 않은지, ConfigMap 적용·에이전트 재시작 여부를 확인합니다.
 
-   <!-- 📸 capture: images/session-07/3d-aks-logs-containerlogv2.png -->
    <!--
    ![ContainerLogV2 테이블 KQL 결과로 api 컨테이너 로그가 조회된 Logs 화면을 보여 주는 Azure Portal 스크린샷](images/session-07/3d-aks-logs-containerlogv2.png)
 
@@ -420,46 +405,16 @@ curl -sX POST "http://$LB_IP/api/chat" \
 | **3. AKS 모니터링·문제 해결** | Container Insights · kubectl logs/describe/top · 연결 확인 | **사용** — Container Insights(DCR+DCRA) + `kubectl logs` + ContainerLogV2(3단계). 의도적 장애 주입 연습은 생략 |
 
 > [!NOTE]
-> **본 저장소 확장** — Workload Identity(federated User Assigned Managed Identity)·Container Insights DCR/DCRA·`AcrPull` IaC 부여는 학습 경로 본문 범위를 넘어서는 실전 패턴입니다. 학습 경로의 K8s Secret 대신 본 워크샵 표준(Entra ID + DefaultAzureCredential)을 일관되게 적용했습니다.
-
----
-
-## 주의
-
-> [!CAUTION]
-> **Custom kubelet identity 사용 시 control plane identity 도 UserAssigned 강제** — 한쪽만 UserAssigned 면 `CustomKubeletIdentityOnlySupportedOnUserAssignedMSICluster` 오류가 납니다. `what-if` 가 못 잡으므로 양쪽 모두 UserAssigned 로 명시합니다 (본 세션 Bicep 은 AKS 전용 User Assigned Managed Identity 하나를 둘 다에 사용).
-
-> [!CAUTION]
-> **`addonProfiles.omsagent` 단독으로는 Log Analytics 에 데이터가 안 흐름** — DCR + DCRA 둘 다 명시 선언해야 합니다. AKS → Insights 가 "no data" 면 99% 이 함정입니다.
-
-> [!WARNING]
-> **`koreacentral` DSv5 vCPU 할당량 = 0** — DSv5 기본 할당량이 0 이라 quota exceeded 가 납니다. 본 워크샵은 DSv3(기본 10 vCPU) 를 사용합니다.
-
-> [!WARNING]
-> **Entra ID + Azure RBAC + `disableLocalAccounts=true`** — `az aks get-credentials --admin` 은 사용 불가(정상). **두 역할이 모두 필요**합니다: ① `Azure Kubernetes Service Cluster User Role`(kubeconfig 다운로드용) ② `Azure Kubernetes Service RBAC Cluster Admin`(실제 `kubectl get/apply` — 클러스터가 `enableAzureRBAC=true` 라 Cluster User Role 만으론 모든 리소스가 `Forbidden: ... Update role assignment to allow access`). 본 세션 Bicep 이 둘 다 자동 부여합니다. (`az aks command invoke` 로 클러스터에서 kubectl 을 실행하면 로컬 kubelogin 불필요.)
-
-> [!CAUTION]
-> **Workload Identity subject 일치** — federatedIdentityCredential 의 subject(`system:serviceaccount:default:apps-api-sa`)와 매니페스트의 namespace·ServiceAccount 이름이 정확히 일치해야 합니다. 불일치 시 토큰 교환이 실패해 파드가 Azure 자원 접근에서 인증 오류를 냅니다.
-
-> [!IMPORTANT]
-> 더 자세한 함정 모음은 [docs/pitfalls/common.md](../pitfalls/common.md) 의 [Azure Kubernetes Service](../pitfalls/common.md#azure-kubernetes-service) 섹션을 참고합니다.
+> **본 저장소 확장** — Workload Identity(federated User Assigned Managed Identity)·Container Insights DCR/DCRA·`AcrPull` IaC 부여는 학습 경로 본문 범위를 넘어서는 실전 패턴입니다. 학습 경로의 K8s Secret 대신 본 챌린지 표준(Entra ID + DefaultAzureCredential)을 일관되게 적용했습니다.
 
 ---
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-07/complete/` 와 일치합니다. 본 세션이 워크샵의 마지막 세션이므로 다음 `cp -a` 는 없습니다
-- **워크샵 종료** — 모든 자원 정리는 [docs/cleanup.md](../cleanup.md) 절차를 참고합니다. 정리하지 않으면 AKS Load Balancer · Managed Redis 등 idle 자원이 매일 누적되므로 즉시 정리를 권장합니다
-- **자격증 시험 가이드** — Azure AI-200 시험은 본 워크샵 8개 학습 경로 전부를 커버합니다. 응시 전 [README.md](../../README.md) 의 학습 경로 매핑 표를 다시 살펴보고 각 Microsoft Learn 모듈을 정독하는 것을 권장합니다
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-07/complete/` 와 일치합니다. 본 세션이 챌린지의 마지막 세션이므로 다음 `cp -a` 는 없습니다
+- **챌린지 종료** — 모든 자원 정리는 [docs/cleanup.md](../cleanup.md) 절차를 참고합니다. 정리하지 않으면 AKS Load Balancer · Managed Redis 등 idle 자원이 매일 누적되므로 즉시 정리를 권장합니다
+- **자격증 시험 가이드** — Azure AI-200 시험은 본 챌린지 8개 학습 경로 전부를 커버합니다. 응시 전 [README.md](../../README.md) 의 학습 경로 매핑 표를 다시 살펴보고 각 Microsoft Learn 모듈을 정독하는 것을 권장합니다
 
 ---
 
-## 참고 자료
-
-- Microsoft Learn — [Deploy and monitor apps on Azure Kubernetes Service](https://learn.microsoft.com/ko-kr/training/paths/deploy-monitor-apps-azure-kubernetes-service/)
-- Microsoft Learn — [Azure Workload Identity](https://learn.microsoft.com/ko-kr/azure/aks/workload-identity-overview)
-- 본 저장소 — `infra/sessions/07-aks/main.bicep`, `infra/sessions/07-aks/manifests/`
-
----
-
-👈 [session-06 — Observability 심화](./06-observability.md) | [자원 정리](../cleanup.md) 👉
+👈 [session-06](./06-observability.md) | [자원 정리](../cleanup.md) 👉

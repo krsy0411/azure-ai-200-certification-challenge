@@ -1,36 +1,12 @@
-# session-06 — Observability 심화 — 커스텀 OpenTelemetry span · KQL Workbook · Log Search Alert
+# session-06 (Observability 심화 — 커스텀 OpenTelemetry span · KQL Workbook · Log Search Alert)
 
-> **관련 Microsoft Learn 학습 경로**
->
-> - [Observe and troubleshoot apps](https://learn.microsoft.com/ko-kr/training/paths/observe-troubleshoot-apps/)
+👈 [챌린지 홈](../../README.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
 >
 > - [session-00](./00-setup.md) ~ [session-05](./05-app-config-flags.md) 완료 — Application Insights · Log Analytics Workspace · Azure Container Apps · 시맨틱 캐시 · 피처 플래그 가 본인 구독에 존재
 > - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
-
----
-
-## 0. 이 세션에서 경험하는 내용
-
-- **한 문장 골** — "이 RAG 호출의 retrieval 단계가 얼마나 걸렸나 · 몇 토큰을 썼나 · 캐시 hit 였나" 같은 비즈니스 질문에 답하는 커스텀 OpenTelemetry span 을 심고, KQL Workbook 과 Log Search Alert 로 워크샵 전체를 한눈에 관찰
-- **새로 프로비저닝되는 자원**
-  - Action Group — 알림 수신자 (본인 이메일)
-  - Log Search Alert 2개 (오류율 · p95 지연) — scheduledQueryRules
-  - Application Insights Workbook — P95 latency · 분당 토큰 · 캐시 hit rate (Bicep 에 ARM JSON 임베드)
-  - Application Insights · Log Analytics Workspace 는 [session-00](./00-setup.md) 에서 이미 존재 (재배포 없음)
-- **이 세션의 학습 포인트**
-  - 자동 계측 위에 커스텀 span 을 중첩 (새 루트 span 을 만들지 않고 자동 request span 의 자식으로)
-  - **span attribute** (dependencies.customDimensions) 와 **OTEL 메트릭** (customMetrics.value) 의 용도 분리
-  - AI 워크로드에 적합한 Log Search Alert (KQL 기반) 로 p95·오류율 경고
-- **사용해볼 SDK / CLI**
-  - `opentelemetry.trace` span + `opentelemetry.metrics` counter
-  - KQL — `requests`, `dependencies`, `customMetrics` 테이블 쿼리
-- **Portal 에서 확인할 지표 / 데이터**
-  - Application Insights → Workbooks → 워크샵 워크북
-  - Application Insights → Transaction search — 커스텀 span 트리
-  - Azure Monitor → Alerts — 발화된 alert + 이메일
 
 ---
 
@@ -60,9 +36,14 @@ Copy-Item -Path save-points/session-06/start/* -Destination workshop -Recurse -F
 
 ### 1.1 호출할 모듈 한눈에 보기
 
-- `monitor-action-group.bicep` — 이메일 수신자 Action Group
-- `monitor-scheduled-query-alert.bicep` — Log Search Alert (재사용 — 오류율·p95)
-- `monitor-workbook.bicep` — 워크북 ARM JSON 임베드
+`infra/modules/session-06/` 에 완성되어 있는 모듈입니다.
+
+```text
+infra/modules/session-06/
+├── monitor-action-group.bicep          # 이메일 수신자 Action Group
+├── monitor-scheduled-query-alert.bicep # Log Search Alert (재사용 — 오류율·p95)
+└── monitor-workbook.bicep              # 워크북 ARM JSON 임베드
+```
 
 ### 1.2 Action Group + Log Search Alert 2개
 
@@ -140,7 +121,9 @@ output workbookId string = workbook.outputs.id
 
 ```bash
 az bicep build --file infra/sessions/06-observability/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
+```
 
+```bash
 ALERT_EMAIL=$(az ad signed-in-user show --query mail -o tsv)
 az deployment group create \
   --resource-group rg-ai200ws-dev \
@@ -157,7 +140,9 @@ az deployment group create \
 ```bash
 az monitor scheduled-query list -g rg-ai200ws-dev \
   --query "[].{name:name, enabled:enabled, severity:severity}" -o table
+```
 
+```bash
 az resource list -g rg-ai200ws-dev --resource-type microsoft.insights/workbooks \
   --query "[].name" -o table
 ```
@@ -244,7 +229,9 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
 ```bash
 # 정상 트래픽 20건 — 커스텀 span(rag.retrieve·rag.generate·cache.lookup)·메트릭 생성
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 20
+```
 
+```bash
 # 오류율 알림 검증 — 의도적 500 을 10건 발생 (간격 필수)
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --chaos 10 --interval 3
 ```
@@ -254,7 +241,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 5~10분 후 본인 이메일에 알림 메일 도착 여부를 확인합니다.
 
-<!-- 📸 capture: images/session-06/2-alert-notification-email.png -->
 <!--
 ![Azure Monitor 오류율 경고 발화로 수신된 알림 이메일을 보여 주는 스크린샷](images/session-06/2-alert-notification-email.png)
 
@@ -269,11 +255,9 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 1. **Application Insights** → **Workbooks** → `AI-200 Workshop 관측성` — P95 latency · 분당 토큰 · 캐시 hit rate 가 한 화면에 시각화
 
-   <!-- 📸 capture: images/session-06/3a-workbook-overview-01.png -->
-   <!-- 📸 capture: images/session-06/3a-workbook-overview-02.png -->
    <!--
-   ![워크샵 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3a-workbook-overview-01.png)
-   ![워크샵 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3a-workbook-overview-02.png)
+   ![챌린지 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3a-workbook-overview-01.png)
+   ![챌린지 워크북의 관측성 차트를 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3a-workbook-overview-02.png)
 
    워크북의 세 차트 — P95 latency · 분당 토큰 · 캐시 hit rate — 에 2단계에서 발생시킨 트래픽이 반영되어 있는지 확인합니다. 분당 토큰 차트에 `tokens.prompt` 와 `tokens.completion` 두 계열이 보이면 OpenTelemetry 메트릭 발행이 정상입니다.
    -->
@@ -297,8 +281,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
    > [!NOTE]
    > 커스텀 span (특히 `rag.generate`) 은 트래픽이 적거나 replica 가 막 깨어난 (콜드 스타트) 상황에서는 OpenTelemetry 의 배치 export 와 Azure Container Apps 의 scale-to-zero 특성상 일부 누락될 수 있습니다. 위처럼 지속 트래픽을 흘려 replica 를 깨워 두면 안정적으로 기록됩니다. 이는 코드 문제가 아니라 서버리스 환경의 배치 텔레메트리 특성입니다.
 
-   <!-- 📸 capture: images/session-06/3b-transaction-search-span-tree-01.png -->
-   <!-- 📸 capture: images/session-06/3b-transaction-search-span-tree-02.png -->
    <!--
    ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3b-transaction-search-span-tree-01.png)
    ![POST /api/chat 요청의 trace 트리에 커스텀 span 이 중첩된 모습을 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3b-transaction-search-span-tree-02.png)
@@ -308,9 +290,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 3. **Application Insights** → **Failures** → `/api/_chaos` 호출의 stack trace
 
-   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace-01.png -->
-   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace-02.png -->
-   <!-- 📸 capture: images/session-06/3c-failures-chaos-stack-trace-03.png -->
    <!--
    ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (1)](images/session-06/3c-failures-chaos-stack-trace-01.png)
    ![/api/_chaos 호출의 500 오류와 예외 stack trace 를 보여 주는 Azure Portal 스크린샷 (2)](images/session-06/3c-failures-chaos-stack-trace-02.png)
@@ -321,8 +300,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 4. **Azure Monitor** → **Alerts** → 발화된 오류율 alert + 본인 이메일 메일
 
-   <!-- 📸 capture: images/session-06/3d-alerts-fired-error-rate-01.png -->
-   <!-- 📸 capture: images/session-06/3d-alerts-fired-error-rate-02.png -->
    <!--
    ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷 (1)](images/session-06/3d-alerts-fired-error-rate-01.png)
    ![발화된 오류율 alert 목록을 보여 주는 Azure Monitor Alerts 화면의 Azure Portal 스크린샷 (2)](images/session-06/3d-alerts-fired-error-rate-02.png)
@@ -347,7 +324,6 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
    | render timechart
    ```
 
-   <!-- 📸 capture: images/session-06/3e-logs-custom-metrics-timechart.png -->
    <!--
    ![customMetrics KQL 결과가 timechart 로 렌더링된 모습을 보여 주는 Azure Portal 스크린샷](images/session-06/3e-logs-custom-metrics-timechart.png)
 
@@ -366,46 +342,16 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 | **2. 로그·메트릭 분석** | KQL · 오류/성능 탐색(p95) · 통합 문서(Workbook) · 경고(metric vs log search · action group) | **사용** — Workbook(ARM JSON 임베드) + Log Search Alert(오류율·p95) + Action Group(3단계). **생략** — 대시보드(Workbook 으로 대체) · 스마트 감지(자동·무료라 확인만) |
 
 > [!NOTE]
-> **본 저장소 확장** — Workbook 의 `Microsoft.Insights/workbooks` Bicep 임베드는 학습 경로 범위 밖이지만, 본 워크샵의 Bicep 우선(IaC) 원칙에 따라 ARM JSON 을 Bicep 에 임베드합니다. 인증은 연결 문자열(ikey 포함) 인제스션이라 `Monitoring Metrics Publisher` 역할은 불필요합니다.
-
----
-
-## 주의
-
-> [!CAUTION]
-> **`set_attribute` ≠ customMetrics** — attribute 는 dependencies.customDimensions, 집계 시계열은 OTEL 메트릭(Counter)→customMetrics.value. 토큰·캐시 KQL 이 빈 결과면 메트릭 발행이 빠진 것입니다 ([2.2](#22-커스텀-span--메트릭-구현) 참고).
-
-> [!CAUTION]
-> **커스텀 루트 span 을 만들지 않습니다** — FastAPI 자동 계측이 이미 SERVER(requests) span 을 만들므로, 또 다른 루트를 만들면 중복됩니다. RAG span 들은 `start_as_current_span` 으로 열어 자동 request span 의 자식으로 중첩합니다.
-
-> [!CAUTION]
-> **FastAPI 계측은 `app = FastAPI(...)` 직후 모듈 레벨에서** — `configure_azure_monitor()` + `FastAPIInstrumentor.instrument_app(app)` 를 lifespan startup 에서 호출하면 미들웨어 스택이 이미 만들어진 뒤라 **인입 요청(requests) span 이 통째로 누락**됩니다(커스텀 span·metric 은 잡히는데 requests 만 빠짐). 그러면 위의 "자동 request span" 전제가 깨지고, 본 세션의 requests 기반 알림·Workbook P95 에 데이터가 안 들어옵니다. 반드시 app 생성 직후(요청 처리 전)에 계측합니다.
-
-> [!CAUTION]
-> **민감 정보 attribute 금지** — 질문 본문·답변을 attribute 에 넣으면 Application Insights 에 영구 기록됩니다. `user.session_id` 까지만 기록하고 본문은 넣지 않습니다.
-
-> [!WARNING]
-> **샘플링** — 기본 sampling 이 100% 가 아닐 수 있습니다. 모든 트레이스를 보려면 `OTEL_TRACES_SAMPLER=always_on` 을 설정합니다 (메트릭은 샘플링 영향 없음).
-
-> [!IMPORTANT]
-> 더 자세한 함정 모음은 [docs/pitfalls/common.md](../pitfalls/common.md) 를 참고합니다.
+> **본 저장소 확장** — Workbook 의 `Microsoft.Insights/workbooks` Bicep 임베드는 학습 경로 범위 밖이지만, 본 챌린지의 Bicep 우선(IaC) 원칙에 따라 ARM JSON 을 Bicep 에 임베드합니다. 인증은 연결 문자열(ikey 포함) 인제스션이라 `Monitoring Metrics Publisher` 역할은 불필요합니다.
 
 ---
 
 ## 마무리
 
 - **save-point** — 본 세션의 모든 변경은 `save-points/session-06/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-07/start/. workshop/` 를 실행합니다
-- **자원 정리** — Workbook · Action Group · Log Search Alert 는 비용이 사실상 0 이라 정리하지 않습니다. Application Insights · Log Analytics Workspace 는 [session-00](./00-setup.md) 부터 사용 중이므로 워크샵 전체 정리 시점에 함께 정리합니다
+- **자원 정리** — Workbook · Action Group · Log Search Alert 는 비용이 사실상 0 이라 정리하지 않습니다. Application Insights · Log Analytics Workspace 는 [session-00](./00-setup.md) 부터 사용 중이므로 챌린지 전체 정리 시점에 함께 정리합니다
 - **다음 세션 미리보기** — [session-07](./07-aks.md) 에서는 같은 RAG 워커로드를 Azure Container Apps 대신 Azure Kubernetes Service 로 배포해보고, K8s 매니페스트 · `kubectl` · Container Insights 로 두 호스팅 모델의 트레이드오프를 직접 비교합니다
 
 ---
 
-## 참고 자료
-
-- Microsoft Learn — [Observe and troubleshoot apps](https://learn.microsoft.com/ko-kr/training/paths/observe-troubleshoot-apps/)
-- OpenTelemetry Python — [opentelemetry.io/docs/languages/python/](https://opentelemetry.io/docs/languages/python/)
-- 본 저장소 — `infra/sessions/06-observability/main.bicep`, `apps/api/src/observability/spans.py`
-
----
-
-👈 [session-05 — App Configuration 피처 플래그](./05-app-config-flags.md) | [session-07 — Azure Kubernetes Service 대안 배포](./07-aks.md) 👉
+👈 [session-05](./05-app-config-flags.md) | [session-07](./07-aks.md) 👉

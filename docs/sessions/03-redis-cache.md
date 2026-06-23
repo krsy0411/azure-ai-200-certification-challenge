@@ -1,8 +1,6 @@
-# session-03 — Managed Redis 시맨틱 캐시
+# session-03 (Managed Redis 시맨틱 캐시)
 
-> **관련 Microsoft Learn 학습 경로**
->
-> - [Enhance AI solutions with Azure Managed Redis](https://learn.microsoft.com/ko-kr/training/paths/enhance-ai-solutions-azure-managed-redis/)
+👈 [챌린지 홈](../../README.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
@@ -10,31 +8,6 @@
 > - [session-00](./00-setup.md), [session-01](./01-rag-mvp.md) 완료 — Azure OpenAI · Azure Container Apps · User Assigned Managed Identity · Application Insights 가 본인 구독에 존재
 > - (선택) [session-02](./02-pgvector.md) 완료 — 두 벡터 백엔드의 latency 베이스라인이 있으면 캐시 효과 비교가 풍부함
 > - 시작본 코드를 작업 폴더로 받기 — [시작본 코드 받기](#시작본-코드-받기) 참고
-
----
-
-## 0. 이 세션에서 경험하는 내용
-
-- **한 문장 골** — "회사 휴가 정책 알려줘" 와 "휴가 규정이 어떻게 돼?" 처럼 의미상 같은 두 질문을 Managed Redis 가 같다고 판단해, 두 번째 호출이 빠르게 응답되는 시맨틱 캐시를 도입
-- **새로 프로비저닝되는 자원**
-  - Azure Managed Redis 클러스터 (Balanced_B0 — 최소 등급)
-  - 데이터베이스 default — RediSearch 모듈 포함, `evictionPolicy=NoEviction`, Entra ID 전용 인증
-  - access policy assignment 2개 — User Assigned Managed Identity + 배포 사용자
-- **이 세션의 학습 포인트**
-  - 완성된 Redis Bicep 모듈 3개를 `main.bicep` 에서 조립
-  - `redis-entraid` credential provider 로 Entra ID 인증 Redis 클라이언트 구성
-  - RediSearch FLAT 벡터 인덱스 + KNN 으로 시맨틱 캐시 lookup / store 구현
-- **사용해볼 SDK / CLI**
-  - `redis-py` 5.x async + `redis-entraid` credential provider
-  - RediSearch `FT.CREATE` (FLAT 벡터 인덱스) + `FT.SEARCH` KNN
-  - OpenTelemetry 커스텀 span `cache.lookup` 에 `cache_hit` 속성 부여
-- **확인할 지표 / 데이터**
-  - 로컬 `redis-cli`(Entra 토큰 접속) — `FT.INFO`, `KEYS rag:*` 로 캐시 인덱스·키 직접 조회
-  - Managed Redis → Metrics — Ops/sec · Cache hits
-  - Application Insights → Logs (KQL) — `cache_hit` 분포
-
-> [!TIP]
-> 이 세션은 `Bicep 조립 → 배포 → 코드 채우기 → 이미지 빌드·배포 → 캐시 효과 측정 → Portal 확인` 흐름으로 진행합니다.
 
 ---
 
@@ -66,9 +39,12 @@ Copy-Item -Path save-points/session-03/start/* -Destination workshop -Recurse -F
 
 `infra/modules/session-03/` 에 완성되어 있는 모듈입니다.
 
-- `redis-enterprise.bicep` — Azure Managed Redis 클러스터 (Balanced_B0)
-- `redis-enterprise-database.bicep` — RediSearch 모듈 + `evictionPolicy=NoEviction` + Entra 전용 인증
-- `redis-access-policy-assignment.bicep` — Entra principal 을 기본 access policy 에 부여
+```text
+infra/modules/session-03/
+├── redis-enterprise.bicep                # Azure Managed Redis 클러스터 (Balanced_B0)
+├── redis-enterprise-database.bicep       # RediSearch 모듈 + evictionPolicy=NoEviction + Entra 전용 인증
+└── redis-access-policy-assignment.bicep  # Entra principal 을 기본 access policy 에 부여
+```
 
 ### 1.2 클러스터 + 데이터베이스
 
@@ -150,10 +126,10 @@ az deployment group what-if `
 what-if 결과가 의도대로면 `what-if` 를 `create` 로 바꿔 배포합니다.
 
 > [!NOTE]
-> Azure Managed Redis 클러스터 생성에 약 **8~12분** 소요됩니다. 본 워크샵에서 가장 오래 걸리는 배포 중 하나입니다. 진행되는 동안 [2단계 · 복붙으로 경험해보기](#2단계--복붙으로-경험해보기) 의 캐시 전략과 코드를 정독합니다.
+> Azure Managed Redis 클러스터 생성에 약 **8~12분** 소요됩니다. 본 챌린지에서 가장 오래 걸리는 배포 중 하나입니다. 진행되는 동안 [2단계 · 복붙으로 경험해보기](#2단계--복붙으로-경험해보기) 의 캐시 전략과 코드를 정독합니다.
 
 > [!CAUTION]
-> **비용 안내** — Managed Redis 는 본 워크샵에서 가장 비싼 idle 자원입니다 (최소 등급 Balanced_B0 라도 시간당 누적). 세션을 마친 뒤에는 즉시 [자원 정리](../cleanup.md) 를 수행하는 것을 권장합니다.
+> **비용 안내** — Managed Redis 는 본 챌린지에서 가장 비싼 idle 자원입니다 (최소 등급 Balanced_B0 라도 시간당 누적). 세션을 마친 뒤에는 즉시 [자원 정리](../cleanup.md) 를 수행하는 것을 권장합니다.
 
 ### 1.6 배포 완료 확인
 
@@ -183,13 +159,13 @@ RAG 응답을 캐싱할 때 세 가지 전략이 있습니다.
 | **시맨틱 유사도** | 질문 임베딩 벡터 | 새 질문 임베딩이 기존 캐시 키와 cosine 유사도 ≥ 임계값 | paraphrase 흡수 · hit 율 높음 | 임계값 튜닝 필요 · 잘못된 hit 위험 |
 | **RAG 인지 (튜플)** | (질문 임베딩, 사용 문서 셋) | 의미 + 문서 셋 모두 일치 | 문서 변경 시 자동 무효화 | 캐시 키 공간이 커지고 hit 율이 다소 떨어짐 |
 
-본 워크샵은 **시맨틱 유사도 + 임계값 0.62** + TTL 24h 를 채택합니다.
+본 챌린지는 **시맨틱 유사도 + 임계값 0.62** + TTL 24h 를 채택합니다.
 
 > [!IMPORTANT]
 > **임계값은 임베딩 모델 기준으로 실측해 정합니다** — `text-embedding-3-large` 로 한국어 paraphrase 쌍을 실측하면 같은 의미의 질문이 cosine **0.6~0.76**, 의미가 다른 질문이 **0.2~0.3** 에 분포합니다. 예) "회사 휴가 정책 알려줘" ↔ "휴가 규정이 어떻게 돼?" = **0.64**, ↔ "연차 어떻게 신청해?" = 0.23. 따라서 둘을 가르는 컷오프는 **0.62** 근방입니다. (영어 SBERT 류 직관으로 0.9 대를 쓰면 같은 의미인데도 전부 miss 가 됩니다.)
 
 > [!TIP]
-> **시험 단골 패턴** — "RAG 응답 캐싱은 문자열 매칭으로 부족하다 — 임베딩 기반 시맨틱 캐시" 가 정답입니다. 임계값을 너무 낮추면 잘못된 hit, 너무 높이면 캐시가 거의 비어 있으므로 **반드시 쓰는 임베딩 모델·언어로 같은 의미/다른 의미 쌍의 유사도를 실측한 뒤** 그 사이 값으로 정합니다 (본 워크샵 모델 기준 0.55~0.65).
+> **시험 단골 패턴** — "RAG 응답 캐싱은 문자열 매칭으로 부족하다 — 임베딩 기반 시맨틱 캐시" 가 정답입니다. 임계값을 너무 낮추면 잘못된 hit, 너무 높이면 캐시가 거의 비어 있으므로 **반드시 쓰는 임베딩 모델·언어로 같은 의미/다른 의미 쌍의 유사도를 실측한 뒤** 그 사이 값으로 정합니다 (본 챌린지 모델 기준 0.55~0.65).
 
 ### 2.2 Redis 클라이언트 구현
 
@@ -332,7 +308,7 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 1. **`redis-cli` 로 캐시 인덱스·키 직접 조회**
 
    > [!CAUTION]
-   > **Azure Managed Redis 에는 브라우저 Console 블레이드가 없습니다** — 클래식 *Azure Cache for Redis* 의 Console 과 혼동하기 쉽습니다. Managed Redis(Redis Enterprise) 는 포털 안에서 명령을 실행할 수 없으므로 로컬 `redis-cli`(또는 RedisInsight)로 접속합니다. 게다가 본 워크샵 클러스터는 access key 인증을 꺼 두었으므로 (`accessKeysAuthentication=Disabled`) Entra 토큰으로 접속합니다.
+   > **Azure Managed Redis 에는 브라우저 Console 블레이드가 없습니다** — 클래식 **Azure Cache for Redis** 의 Console 과 혼동하기 쉽습니다. Managed Redis(Redis Enterprise) 는 포털 안에서 명령을 실행할 수 없으므로 로컬 `redis-cli`(또는 RedisInsight)로 접속합니다. 게다가 본 챌린지 클러스터는 access key 인증을 꺼 두었으므로 (`accessKeysAuthentication=Disabled`) Entra 토큰으로 접속합니다.
 
    ```bash
    HOST=$(az redisenterprise list -g rg-ai200ws-dev --query "[0].hostName" -o tsv)
@@ -353,7 +329,6 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
    기대 — `FT._LIST` 에 `rag_cache_idx` 노출, `FT.INFO` 의 `num_docs` 가 호출 횟수만큼 증가, `KEYS rag:*` 에 캐시 키들이 노출됩니다.
 
-   <!-- 📸 capture: images/session-03/3a-redis-console-ft-info-01.png -->
    ![Entra 토큰으로 접속한 redis-cli 터미널에서 FT._LIST 를 실행한 결과를 보여 주는 스크린샷](images/session-03/3a-redis-console-ft-info-01.png)
    ![Entra 토큰으로 접속한 redis-cli 터미널에서 FT.INFO 를 실행한 결과를 보여 주는 스크린샷](images/session-03/3a-redis-console-ft-info-02.png)
    ![Entra 토큰으로 접속한 redis-cli 터미널에서 KEYS rag:* 를 실행한 결과를 보여 주는 스크린샷](images/session-03/3a-redis-console-ft-info-03.png)
@@ -362,7 +337,6 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 2. **Managed Redis** → **Metrics** → `Operations Per Second` · `Cache Hits` 추가
 
-   <!-- 📸 capture: images/session-03/3b-redis-metrics-ops-cache-hits.png -->
    ![Azure Managed Redis 의 Operations Per Second 와 Cache Hits 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-03/3b-redis-metrics-ops-cache-hits.png)
 
    API 호출 시점에 **Operations Per Second** 가 튀고, 캐시 hit 가 발생한 시점에 **Cache Hits** 가 증가하는지 확인합니다.
@@ -379,7 +353,6 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
    기대 — 첫 호출 시점에 miss 1, 두 번째 호출 시점에 hit 1 로 시각화됩니다.
 
-   <!-- 📸 capture: images/session-03/3c-app-insights-cache-hit-columnchart.png -->
    ![cache_hit 분포를 막대 차트로 시각화한 Application Insights Logs 결과를 보여 주는 Azure Portal 스크린샷](images/session-03/3c-app-insights-cache-hit-columnchart.png)
 
    첫 호출 시점에는 misses 1, 두 번째 호출 시점에는 hits 1 로 집계되는지 차트에서 확인합니다.
@@ -388,7 +361,6 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
    - 첫 건은 `cache.lookup` (miss) 뒤에 retrieve · generate span 이 이어짐
    - 두 번째 건은 `cache.lookup` 만 보이고 그 뒤 span 이 없음 (캐시 hit 라 RAG 우회)
 
-   <!-- 📸 capture: images/session-03/3d-transaction-search-cache-hit-trace-01.png -->
    ![캐시 miss 건의 POST /api/chat 트랜잭션 상세 — cache.lookup 뒤에 retrieve · generate span 이 이어지는 Application Insights Transaction search 의 Azure Portal 스크린샷](images/session-03/3d-transaction-search-cache-hit-trace-01.png)
    ![캐시 hit 건의 POST /api/chat 트랜잭션 상세 — cache.lookup 만 남고 후속 span 이 없는 Application Insights Transaction search 의 Azure Portal 스크린샷](images/session-03/3d-transaction-search-cache-hit-trace-02.png)
 
@@ -403,30 +375,13 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 | 모듈 | 단원 핵심 | 본 세션 |
 |---|---|---|
 | **1. 데이터 작업 구현** | Managed Redis 살펴보기 · 클라이언트 라이브러리 + TLS + Entra ID · SET/GET·TTL·캐시-어사이드·무효화 | **사용** — Entra ID 인증(`redis-entraid`), TTL 24h, 캐시 store/lookup (2.2 · 2.3) |
-| **2. 이벤트 메시징 구현** | pub/sub · Redis Streams 작업 큐 · 브로드캐스트 vs 조정 배포 | **생략** — session-04 의 Service Bus · Event Grid · Functions 와 개념 중복. 본 워크샵은 Azure 네이티브 메시징을 session-04 에서 다룸 |
+| **2. 이벤트 메시징 구현** | pub/sub · Redis Streams 작업 큐 · 브로드캐스트 vs 조정 배포 | **생략** — session-04 의 Service Bus · Event Grid · Functions 와 개념 중복. 본 챌린지는 Azure 네이티브 메시징을 session-04 에서 다룸 |
 | **3. 벡터 스토리지 구현** | 인덱스/쿼리 (FT.CREATE · KNN) · 인덱스 전략 (FLAT vs HNSW · 메트릭 · FLOAT32) · 데이터 구조 (해시 vs JSON) | **사용** — FLAT + COSINE + FLOAT32 + Hash 로 시맨틱 캐시 (2.3). HNSW·JSON 은 캐시 규모상 미채택 |
 
 > [!NOTE]
 > **인덱스 선택 근거** — 학습 경로 기준 10,000 벡터 미만 · 완벽한 정확도면 FLAT 권장. 시맨틱 캐시는 엔트리가 수백~수천이라 FLAT 이 적합하며, 근사 오차로 인한 잘못된 hit 위험도 낮습니다. HNSW 는 캐시가 수만 건 이상으로 커질 때 고려합니다.
 
 ---
-
-## 주의
-
-> [!CAUTION]
-> **RediSearch 데이터베이스는 `evictionPolicy=NoEviction` 필수** — 다른 eviction policy 는 RediSearch 인덱스와 충돌해 `FT.SEARCH` 결과가 stale 해집니다. Bicep `redis-enterprise-database.bicep` 에서 `NoEviction` 으로 고정되어 있습니다.
-
-> [!CAUTION]
-> **cosine 유사도 vs distance 환산** — RediSearch 의 COSINE 은 distance(0=동일 ~ 2=반대) 를 반환합니다. "유사도 ≥ 0.62" 컷오프는 코드에서 `1 - distance ≥ 0.62` 로 환산해야 합니다. 이 환산을 빼먹으면 전부-hit 또는 전부-miss 가 되는데 원인 추적이 어렵습니다.
-
-> [!CAUTION]
-> **FT.SEARCH 는 hash 키만 인덱싱** — 인덱스 prefix 와 일치하는 Redis Hash 키만 인덱싱됩니다. 임베딩·답변·출처를 한 hash 키에 함께 저장합니다 (`hset`). 일반 `SET` 으로 저장한 값은 인덱싱되지 않아 항상 캐시 miss 가 됩니다.
-
-> [!CAUTION]
-> **Entra 전용 인증 + access policy assignment** — 클러스터는 access key 인증을 끈 상태입니다 (`accessKeysAuthentication=Disabled`). Entra principal (User Assigned Managed Identity · 사용자) 이 access policy 에 부여되어 있어야 접속됩니다. 연결이 인증 오류로 실패하면 `redis-access-policy-assignment` 가 배포됐는지 확인합니다.
-
-> [!NOTE]
-> **`az redisenterprise show` 응답 구조** — 일반 ARM 자원의 `properties.xxx` 가 아니라 평탄화된 구조 (`resourceState`, `hostName` 등이 최상위) 입니다.
 
 > [!TIP]
 > 진행 중 막혔다면 완성본 코드를 그대로 덮어쓰고 비교할 수 있습니다.
@@ -445,12 +400,4 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 
 ---
 
-## 참고 자료
-
-- Microsoft Learn — [Enhance AI solutions with Azure Managed Redis](https://learn.microsoft.com/ko-kr/training/paths/enhance-ai-solutions-azure-managed-redis/)
-- RediSearch — [Vector similarity search](https://redis.io/docs/latest/develop/interact/search-and-query/advanced-concepts/vectors/)
-- 본 저장소 — `infra/sessions/03-redis-cache/main.bicep`, `apps/api/src/cache/`
-
----
-
-👈 [session-02 — PostgreSQL pgvector 비교](./02-pgvector.md) | [session-04 — 비동기 인제스션 (Service Bus + Event Grid + Functions)](./04-async-ingestion.md) 👉
+👈 [session-02](./02-pgvector.md) | [session-04](./04-async-ingestion.md) 👉

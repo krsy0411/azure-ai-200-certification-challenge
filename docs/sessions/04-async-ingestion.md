@@ -1,8 +1,6 @@
-# session-04 — 비동기 인제스션 (ingestion) 파이프라인 — Service Bus + Event Grid + Azure Functions
+# session-04 (비동기 인제스션 파이프라인 — Service Bus + Event Grid + Azure Functions)
 
-> **관련 Microsoft Learn 학습 경로**
->
-> - [Integrate backend services for AI solutions](https://learn.microsoft.com/ko-kr/training/paths/integrate-backend-services-ai-solutions/)
+👈 [챌린지 홈](../../README.md)
 
 > [!IMPORTANT]
 > **사전 준비 조건**
@@ -12,34 +10,6 @@
 
 > [!NOTE]
 > **용어 안내** — 본 세션의 "인제스션 (ingestion)" 은 외부 데이터를 시스템 안으로 수집·적재하는 행위입니다. "인젝션 (injection — 주입)" 과 헷갈리지 않도록 주의합니다.
-
----
-
-## 0. 이 세션에서 경험하는 내용
-
-- **한 문장 골** — PDF 또는 Markdown 한 장을 Blob Storage 에 업로드하면 청크 분할 · 임베드 후 Cosmos DB · PostgreSQL 양쪽 인덱스에 자동 저장되는 비동기 파이프라인을 직접 경험
-- **새로 프로비저닝되는 자원**
-  - Service Bus Namespace (Standard) + Queue `ingest-queue` + Dead Letter Queue
-  - Storage Account (`allowSharedKeyAccess=false`) — `documents` · `deployments` 컨테이너
-  - Event Grid System Topic (Blob 소스) + Service Bus 로 라우팅하는 Subscription
-  - Azure Functions (Flex Consumption, Python v2) — 함수 2개
-  - Cosmos DB `leases` · `doc_stats` 컨테이너 (change feed)
-- **이 세션의 학습 포인트**
-  - 완성된 Bicep 모듈을 `main.bicep` 에서 그룹별로 조립
-  - Event Grid → Service Bus 전달은 **System Topic 의 관리 ID** 에 Service Bus Data Sender 를 부여
-  - Azure Functions Python v2 트리거 (Service Bus queue trigger + Cosmos change feed trigger) 구현
-- **사용해볼 SDK / CLI**
-  - Azure Functions Python v2 데코레이터 — `@app.service_bus_queue_trigger`, `@app.cosmos_db_trigger`
-  - `func azure functionapp publish` — Functions Core Tools 로 배포
-  - `az storage blob upload --auth-mode login` — Entra ID 인증 업로드
-- **Portal 에서 확인할 지표 / 데이터**
-  - Service Bus 큐 `ingest-queue` → Metrics — Active 메시지가 업로드 직후 튀고 0 으로 복귀
-  - Azure Functions → Invocations / Log stream
-  - Event Grid System Topic → Metrics — Publish · Delivery 카운트
-  - Cosmos DB → Data Explorer — 새 chunk + `doc_stats` 집계
-
-> [!TIP]
-> 이 세션은 `Bicep 조립 → 배포 → 함수 코드 채우기 → 함수 배포 → 문서 업로드 E2E → Portal 확인` 흐름으로 진행합니다.
 
 ---
 
@@ -71,12 +41,19 @@ Copy-Item -Path save-points/session-04/start/* -Destination workshop -Recurse -F
 
 `infra/modules/session-04/` 에 완성되어 있는 모듈입니다.
 
-- `service-bus-namespace.bicep` · `service-bus-queue.bicep` — Standard 네임스페이스 + `ingest-queue` (DLQ max delivery 5)
-- `storage-account.bicep` — `allowSharedKeyAccess=false`, `documents` · `deployments` 컨테이너
-- `event-grid-system-topic.bicep` · `event-grid-subscription.bicep` — Blob 이벤트 → Service Bus 라우팅
-- `function-app-plan-flex.bicep` · `function-app-flex.bicep` — Flex Consumption + 신 스키마
-- `cosmos-container.bicep` — `leases` · `doc_stats` 컨테이너 (재사용)
-- `role-assignment-servicebus.bicep` · `role-assignment-storage.bicep` — 역할 부여 (재사용)
+```text
+infra/modules/session-04/
+├── service-bus-namespace.bicep      # Standard 네임스페이스
+├── service-bus-queue.bicep          # ingest-queue (DLQ max delivery 5)
+├── storage-account.bicep            # allowSharedKeyAccess=false, documents · deployments 컨테이너
+├── event-grid-system-topic.bicep    # Blob 이벤트 소스 System Topic
+├── event-grid-subscription.bicep    # Blob 이벤트 → Service Bus 라우팅
+├── function-app-plan-flex.bicep     # Flex Consumption 플랜
+├── function-app-flex.bicep          # Flex Consumption + 신 스키마
+├── cosmos-container.bicep           # leases · doc_stats 컨테이너 (재사용)
+├── role-assignment-servicebus.bicep # Service Bus 역할 부여 (재사용)
+└── role-assignment-storage.bicep    # Storage 역할 부여 (재사용)
+```
 
 ### 1.2 Service Bus + Storage
 
@@ -375,7 +352,7 @@ flowchart LR
 | **전달 보장** | At-least-once + 재시도 | At-least-once + DLQ + 순서 보장 |
 | **이벤트 소스** | Blob Storage 등 풍부 | 발신자가 직접 송신 |
 | **백프레셔** | 약함 | 강함 (큐가 버퍼) |
-| **본 워크샵 역할** | Blob 이벤트 → Service Bus 로 라우팅 | Function 처리 큐 + DLQ |
+| **본 챌린지 역할** | Blob 이벤트 → Service Bus 로 라우팅 | Function 처리 큐 + DLQ |
 
 ### 2.3 함수 코드 구현
 
@@ -540,29 +517,24 @@ psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
 
 1. **Service Bus** → 큐 `ingest-queue` → **Metrics** → `Active Messages` (업로드 직후 1 → 0), `Dead-lettered Messages` (0 유지)
 
-   <!-- 📸 capture: images/session-04/04-01-servicebus-queue-metrics-01.png -->
    ![Service Bus 큐 ingest-queue 의 Active Messages 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-04/04-01-servicebus-queue-metrics-01.png)
    ![Service Bus 큐 ingest-queue 의 Dead-lettered Messages 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-04/04-01-servicebus-queue-metrics-02.png)
 
 2. **Application Insights `ai-…`** → **Logs** — `on_ingest_message` 실행 성공 확인 (아래 [!NOTE] 의 KQL). Log stream 은 host 잡음이 많아 권장하지 않습니다
 
-   <!-- 📸 capture: images/session-04/04-02-function-appinsights-ingest.png -->
    ![on_ingest_message 실행 성공 trace 가 조회된 Application Insights Logs 의 Azure Portal 스크린샷](images/session-04/04-02-function-appinsights-ingest.png)
 
 3. **Function App** → **Functions** → `on_cosmos_change` → **Invocations** — change feed 실행 1건 `Success`
 
-   <!-- 📸 capture: images/session-04/04-03-cosmoschange-invocations-01.png -->
    ![on_cosmos_change 함수의 Invocations 탭에 change feed 실행이 Success 로 표시된 Azure Portal 스크린샷](images/session-04/04-03-cosmoschange-invocations-01.png)
    ![on_cosmos_change 함수의 Invocations 실행 상세를 보여 주는 Azure Portal 스크린샷](images/session-04/04-03-cosmoschange-invocations-02.png)
 
 4. **Event Grid System Topic** → **Metrics** — `Publish Events` · `Delivery Successes` 카운트 1 증가
 
-   <!-- 📸 capture: images/session-04/04-04-eventgrid-systemtopic-metrics.png -->
    ![Event Grid System Topic 의 Publish Events 와 Delivery Successes 메트릭 차트를 보여 주는 Azure Portal 스크린샷](images/session-04/04-04-eventgrid-systemtopic-metrics.png)
 
 5. **Cosmos DB** → **Data Explorer** → `chunks` 에서 `SELECT * FROM c WHERE c.doc_id = 'sample-policy'`, `doc_stats` 에서 집계 카운트 확인 (아래 [!NOTE] — 첫 문서는 `doc_stats` 에 안 보일 수 있음)
 
-   <!-- 📸 capture: images/session-04/04-05-cosmos-chunks-items.png -->
    ![Cosmos DB Data Explorer 의 chunks 컨테이너에서 sample-policy 문서의 chunk 항목들이 조회된 Azure Portal 스크린샷](images/session-04/04-05-cosmos-chunks-items.png)
    ![Cosmos DB Data Explorer 의 doc_stats 컨테이너에서 문서 집계 카운트 항목이 조회된 Azure Portal 스크린샷](images/session-04/04-06-cosmos-docstats-items.png)
 
@@ -581,7 +553,7 @@ psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
 > 함수 trace 는 adaptive sampling 으로 일부 누락될 수 있어, 안 보이면 시간 범위를 넓히거나 문서를 한 번 더 업로드합니다. `on_cosmos_change`(Cosmos DB 트리거)는 `requests` 가 생성되어 Invocations 탭에 정상 표시됩니다.
 
 > [!NOTE]
-> **첫 업로드 문서가 `doc_stats` 에 안 보일 수 있습니다** — Cosmos change feed 트리거는 기본적으로 lease 가 확립된 시점 이후의 *새* 변경만 읽습니다 (`start_from_beginning` 미설정). 배포 직후 첫 문서는 lease 확립 *전*에 인입되어 `on_cosmos_change` 가 놓칠 수 있습니다. 두 번째 문서부터는 정상 집계됩니다 (첫 문서 집계가 필요하면 같은 문서를 한 번 더 업로드).
+> **첫 업로드 문서가 `doc_stats` 에 안 보일 수 있습니다** — Cosmos change feed 트리거는 기본적으로 lease 가 확립된 시점 이후의 **새** 변경만 읽습니다 (`start_from_beginning` 미설정). 배포 직후 첫 문서는 lease 확립 **전**에 인입되어 `on_cosmos_change` 가 놓칠 수 있습니다. 두 번째 문서부터는 정상 집계됩니다 (첫 문서 집계가 필요하면 같은 문서를 한 번 더 업로드).
 
 ### 실패 시뮬레이션 (선택)
 
@@ -603,7 +575,6 @@ PY
 
 약 1~2분 후 Portal 의 **Dead-lettered Messages** 카운트가 1 로 증가합니다.
 
-<!-- 📸 capture: images/session-04/04-07-servicebus-deadletter-01.png -->
 ![잘못된 메시지가 5회 재시도 후 Dead-letter 큐로 이동해 Dead-lettered Messages 카운트가 증가한 Service Bus 의 Azure Portal 스크린샷](images/session-04/04-07-servicebus-deadletter-01.png)
 ![Dead-letter 큐의 메시지 상세를 보여 주는 Service Bus 의 Azure Portal 스크린샷](images/session-04/04-07-servicebus-deadletter-02.png)
 
@@ -624,34 +595,6 @@ PY
 
 ---
 
-## 주의
-
-> [!CAUTION]
-> **Cosmos change feed lease container 자동 생성은 control plane RBAC 부재 시 silent 실패** — 호스트는 정상으로 보이지만 trigger 가 fire 하지 않습니다. 본 워크샵 Bicep 은 `leases` 컨테이너를 사전 생성합니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).
-
-> [!WARNING]
-> **Flex Consumption 은 신 스키마 사용** — 환경변수 `FUNCTIONS_WORKER_RUNTIME` 이 무시됩니다. Bicep 에서 `functionAppConfig.runtime.name = 'python'` 형태를 사용해야 runtime 이 인식됩니다.
-
-> [!WARNING]
-> **Storage `allowSharedKeyAccess=false` 일 때 Functions 부팅 실패** — 호스트가 SharedKey 로 접근하려다 차단당해 시작 직후 stop 됩니다. User Assigned Managed Identity 에 `Storage Blob Data Owner` + `Storage Queue Data Contributor` 부여 + `AzureWebJobsStorage__credential=managedidentity` 설정이 필수입니다.
-
-> [!CAUTION]
-> **Event Grid → Service Bus 전달 권한은 System Topic 의 관리 ID 에** — User Assigned Managed Identity 가 아니라 System Topic 의 SystemAssigned 관리 ID 에 `Azure Service Bus Data Sender` 를 부여해야 전달됩니다. 전달이 0 이면 이 역할 부여를 확인합니다.
-
-> [!CAUTION]
-> **Cosmos DB `query_items` 에 `partition_key` 명시** — cross-partition query 는 모든 파티션을 fan-out 스캔해 RU 가 폭주하고 throttling 429 가 발생합니다.
-
-> [!NOTE]
-> **`identity.type='UserAssigned'` 자원은 `identity.principalId` 미노출** — `userAssignedIdentities[id].principalId` 로 접근합니다.
-
-> [!CAUTION]
-> **Event Grid Blob 구독에 subject 필터 필수** — `subjectBeginsWith` 없이 두면 `documents` 뿐 아니라 함수 배포 zip 이 올라가는 `deployments` 컨테이너의 `BlobCreated` 까지 큐로 전달됩니다. 그 blob 은 곧 삭제되어 함수가 `BlobNotFound` 로 실패하고 큐가 오염됩니다 (`func publish` 직후 다발). 구독 필터를 `/blobServices/default/containers/documents/` 로 제한합니다 (본 워크샵 Bicep 반영됨).
-
-> [!CAUTION]
-> **PostgreSQL 방화벽에 "Allow Azure services" 필요** — Azure 호스팅 함수가 UAMI 로 PG 에 접속하는데, session-02 PG 방화벽이 dev IP 만 열어두면 함수의 `_upsert_pg` 가 `ConnectionTimeout` (~132초) 으로 실패합니다 (Cosmos 는 적재되는데 PG 만 빔). PG 에 `0.0.0.0` (Allow Azure services) 규칙을 추가합니다 (본 워크샵 session-04 Bicep 에 반영됨). 운영에선 VNet 통합을 권장합니다.
-
----
-
 ## 마무리
 
 - **save-point** — 본 세션의 모든 변경은 `save-points/session-04/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-05/start/. workshop/` 를 실행합니다
@@ -660,12 +603,4 @@ PY
 
 ---
 
-## 참고 자료
-
-- Microsoft Learn — [Integrate backend services for AI solutions](https://learn.microsoft.com/ko-kr/training/paths/integrate-backend-services-ai-solutions/)
-- Microsoft Learn — [Azure Functions Flex Consumption](https://learn.microsoft.com/ko-kr/azure/azure-functions/flex-consumption-plan)
-- 본 저장소 — `infra/sessions/04-async-ingestion/main.bicep`, `apps/functions/function_app.py`
-
----
-
-👈 [session-03 — Managed Redis 시맨틱 캐시](./03-redis-cache.md) | [session-05 — App Configuration 피처 플래그](./05-app-config-flags.md) 👉
+👈 [session-03](./03-redis-cache.md) | [session-05](./05-app-config-flags.md) 👉
