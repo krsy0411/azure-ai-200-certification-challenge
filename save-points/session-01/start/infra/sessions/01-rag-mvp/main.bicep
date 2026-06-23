@@ -122,7 +122,7 @@ var logAnalyticsSharedKey = law.listKeys().primarySharedKey
 // - role-assignment-cosmos-data-contributor.bicep
 // - role-assignment-keyvault-secrets-user.bicep (principalType='ServicePrincipal')
 
-// -------- 6) (선택) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 ----
+// -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 모듈 호출하기 ----
 // 힌트: if (!empty(userObjectId)) 조건부 모듈 호출. principalType='User'.
 
 // -------- 7) Azure Container Apps — FastAPI (ca-api) 모듈 호출하기 ------------

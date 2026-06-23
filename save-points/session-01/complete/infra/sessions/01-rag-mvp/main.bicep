@@ -213,7 +213,7 @@ module kvSecretsRoleUami '../../modules/session-01/role-assignment-keyvault-secr
   }
 }
 
-// -------- 6) (선택) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 -----
+// -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 -----------
 //             로컬 개발 시 az login 자격으로 데이터 확인이 가능하도록.
 
 module cosmosDataRoleUser '../../modules/session-01/role-assignment-cosmos-data-contributor.bicep' = if (!empty(userObjectId)) {

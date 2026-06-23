@@ -62,5 +62,7 @@ async def chat_with_context(
     # 사용자 프롬프트 — context 와 question 을 구분해 전달
 
     # client.chat.completions.create 호출, 답변 텍스트 반환
-    # 힌트: model = settings.azure_openai_chat_deployment, temperature = 0.2 정도가 RAG 에 적합
+    # 힌트: model = settings.azure_openai_chat_deployment
+    #       gpt-5 계열(reasoning)은 커스텀 temperature 와 max_tokens 를 거부한다.
+    #       temperature 는 생략하고 토큰 상한은 max_completion_tokens (예: 2048) 로 준다 (session-01 docs CAUTION 참고).
     raise NotImplementedError("chat completion 호출을 채워 넣으세요.")
