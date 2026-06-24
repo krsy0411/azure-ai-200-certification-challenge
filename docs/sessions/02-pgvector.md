@@ -24,7 +24,17 @@ cp -a save-points/session-02/start/. workshop/
 Copy-Item -Path save-points/session-02/start/* -Destination workshop -Recurse -Force
 ```
 
-이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
+이후 본 세션의 모든 명령은 `workshop/` 안에서 실행합니다. 터미널을 `workshop/` 로 이동합니다.
+
+```bash
+# Linux · macOS · WSL
+cd workshop
+```
+
+```powershell
+# Windows PowerShell
+Set-Location workshop
+```
 
 시작본에서 학습자가 채우는 파일은 세 개입니다 : `infra/sessions/02-pgvector/main.bicep` (모듈 조립), `apps/api/src/stores/pg_store.py` (PostgreSQL 스토어 구현), `scripts/seed_both.py` (비교 측정). 나머지는 완성되어 제공됩니다.
 
@@ -32,7 +42,7 @@ Copy-Item -Path save-points/session-02/start/* -Destination workshop -Recurse -F
 
 ## 1 단계 : PostgreSQL 프로비저닝
 
-`workshop/infra/sessions/02-pgvector/main.bicep` 을 열고, 아래 순서대로 각 주석을 찾아 바로 아래에 코드를 추가합니다.
+`infra/sessions/02-pgvector/main.bicep` 을 열고, 아래 순서대로 각 주석을 찾아 바로 아래에 코드를 추가합니다.
 
 ### 1.1 호출할 모듈 한눈에 보기
 
@@ -200,6 +210,19 @@ az deployment group what-if \
   --parameters userObjectId=$OID userPrincipalName=$UPN devClientIpAddress=$MY_IP
 ```
 
+```powershell
+# Windows PowerShell
+$OID = (az ad signed-in-user show --query id -o tsv)
+$UPN = (az ad signed-in-user show --query userPrincipalName -o tsv)
+$MY_IP = (Invoke-RestMethod -Uri "https://ifconfig.me")
+
+az deployment group what-if `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/02-pgvector/main.bicep `
+  --parameters infra/sessions/02-pgvector/main.bicepparam `
+  --parameters userObjectId=$OID userPrincipalName=$UPN devClientIpAddress=$MY_IP
+```
+
 > [!CAUTION]
 > `userObjectId`, `userPrincipalName`, `devClientIpAddress` 는 `bicepparam` 파일에 작성해두지 않습니다. git history 에 영구히 남아 포트폴리오 공개 시 본인 식별 정보가 노출됩니다. 배포 명령을 실행할 때마다 `--parameters key=value` 인자로 직접 넘겨주는 방식으로 전달합니다.
 
@@ -210,6 +233,15 @@ az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/02-pgvector/main.bicep \
   --parameters infra/sessions/02-pgvector/main.bicepparam \
+  --parameters userObjectId=$OID userPrincipalName=$UPN devClientIpAddress=$MY_IP
+```
+
+```powershell
+# Windows PowerShell
+az deployment group create `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/02-pgvector/main.bicep `
+  --parameters infra/sessions/02-pgvector/main.bicepparam `
   --parameters userObjectId=$OID userPrincipalName=$UPN devClientIpAddress=$MY_IP
 ```
 
@@ -230,6 +262,17 @@ az postgres flexible-server show \
   --query "{state:state, version:version}" -o jsonc
 ```
 
+```powershell
+# Windows PowerShell
+$PG_NAME = (az postgres flexible-server list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+$PG_HOST = (az postgres flexible-server list -g rg-ai200ws-dev --query "[0].fullyQualifiedDomainName" -o tsv)
+
+az postgres flexible-server show `
+  --name $PG_NAME `
+  --resource-group rg-ai200ws-dev `
+  --query "{state:state, version:version}" -o jsonc
+```
+
 기대 — `state: Ready`.
 
 ---
@@ -244,6 +287,14 @@ Entra ID 토큰을 비밀번호로 사용해 `psql` 로 접속합니다. ([1.11]
 PGPASSWORD=$(az account get-access-token \
   --resource https://ossrdbms-aad.database.windows.net \
   --query accessToken -o tsv) \
+psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require"
+```
+
+```powershell
+# Windows PowerShell
+$env:PGPASSWORD = (az account get-access-token `
+  --resource https://ossrdbms-aad.database.windows.net `
+  --query accessToken -o tsv)
 psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require"
 ```
 
@@ -283,7 +334,7 @@ CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks (doc_id);
 
 ### 2.2 PostgreSQL 스토어 구현
 
-`apps/api/src/stores/pg_store.py` 의 `PgVectorStore` 메서드 본체가 비어 있습니다. 각 메서드의 주석을 찾아 아래 코드를 채웁니다. 백엔드 전환 방법 (`VectorStore` 추상화, `STORE_BACKEND` 분기) 은 이미 완성되어 제공됩니다.
+`apps/api/src/stores/pg_store.py` 의 `PgVectorStore` 메서드 본체가 비어 있습니다. 각 메서드의 주석을 찾아 아래 코드를 채웁니다.
 
 `open` — Entra 토큰을 비밀번호 자리에 넣어 연결 풀을 엽니다.
 
@@ -354,7 +405,122 @@ CREATE INDEX IF NOT EXISTS chunks_doc_id_idx ON chunks (doc_id);
 
 ### 2.3 비교 실행
 
-`scripts/seed_both.py` 의 `_load_cosmos` · `_search_cosmos` · `_load_pg` · `_search_pg` 함수가 비어 있습니다. 완성본 (`save-points/session-02/complete/scripts/seed_both.py`) 의 본체를 채운 뒤 실행합니다.
+`scripts/seed_both.py` 의 `_load_cosmos` · `_search_cosmos` · `_load_pg` · `_search_pg` 함수가 비어 있습니다. 각 함수의 주석을 찾아 아래 코드를 채웁니다.
+
+`_load_cosmos` — Cosmos DB 에 corpus 를 upsert 합니다.
+
+```python
+async def _load_cosmos(
+    credential: DefaultAzureCredential,
+    corpus: list[tuple[str, str, str]],
+    embeddings: list[list[float]],
+) -> None:
+    client = CosmosClient(url=_env("COSMOS_ENDPOINT"), credential=credential)
+    db = client.get_database_client(_env("COSMOS_DATABASE", "appdb"))
+    container = db.get_container_client(_env("COSMOS_CHUNKS_CONTAINER", "chunks"))
+    for (doc_id, title, content), emb in zip(corpus, embeddings, strict=True):
+        await container.upsert_item(
+            {"id": doc_id, "doc_id": doc_id, "title": title, "content": content, "embedding": emb}
+        )
+    await client.close()
+```
+
+`_search_cosmos` — VectorDistance 로 top-k doc_id 를 가져옵니다.
+
+```python
+async def _search_cosmos(
+    credential: DefaultAzureCredential, query_emb: list[float]
+) -> list[str]:
+    client = CosmosClient(url=_env("COSMOS_ENDPOINT"), credential=credential)
+    db = client.get_database_client(_env("COSMOS_DATABASE", "appdb"))
+    container = db.get_container_client(_env("COSMOS_CHUNKS_CONTAINER", "chunks"))
+    sql = (
+        "SELECT TOP @topK c.doc_id, VectorDistance(c.embedding, @e) AS d "
+        "FROM c ORDER BY VectorDistance(c.embedding, @e)"
+    )
+    params = [{"name": "@topK", "value": TOP_K}, {"name": "@e", "value": query_emb}]
+    got = [item["doc_id"] async for item in container.query_items(query=sql, parameters=params)]
+    await client.close()
+    return got
+```
+
+`_load_pg` — extension · 테이블 · HNSW 인덱스를 idempotent 하게 만든 뒤 적재합니다.
+
+```python
+async def _load_pg(
+    credential: DefaultAzureCredential,
+    corpus: list[tuple[str, str, str]],
+    embeddings: list[list[float]],
+) -> None:
+    token = (await credential.get_token(_PG_AAD_SCOPE)).token
+    # 첫 연결은 register 없이 — vector extension 이 아직 없을 수 있으므로 (chicken-and-egg).
+    async with await psycopg.AsyncConnection.connect(_pg_conninfo(token), autocommit=True) as conn:
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS chunks ("
+            "id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, title TEXT, content TEXT NOT NULL, "
+            "embedding halfvec(3072) NOT NULL, metadata JSONB, created_at TIMESTAMPTZ DEFAULT NOW())"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw "
+            "ON chunks USING hnsw (embedding halfvec_cosine_ops) WITH (m = 16, ef_construction = 64)"
+        )
+        # extension 이 생긴 뒤에 register — 이제 halfvec 어댑터를 쓸 수 있다.
+        await register_vector_async(conn)
+        for (doc_id, title, content), emb in zip(corpus, embeddings, strict=True):
+            await conn.execute(
+                "INSERT INTO chunks (id, doc_id, title, content, embedding) "
+                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding",
+                (doc_id, doc_id, title, content, HalfVector(emb)),
+            )
+```
+
+`_search_pg` — SET LOCAL hnsw.ef_search 로 정확도를 조절한 뒤 코사인 거리로 검색합니다.
+
+```python
+async def _search_pg(
+    credential: DefaultAzureCredential, query_emb: list[float], ef_search: int
+) -> list[str]:
+    token = (await credential.get_token(_PG_AAD_SCOPE)).token
+    async with await psycopg.AsyncConnection.connect(_pg_conninfo(token)) as conn:
+        await register_vector_async(conn)
+        async with conn.transaction():
+            await conn.execute(f"SET LOCAL hnsw.ef_search = {int(ef_search)}")  # SET LOCAL 은 파라미터 바인딩 불가 — int 직접 삽입
+            cur = await conn.execute(
+                "SELECT doc_id, embedding <=> %s AS d FROM chunks ORDER BY d LIMIT %s",
+                (HalfVector(query_emb), TOP_K),
+            )
+            rows = await cur.fetchall()
+    return [r[0] for r in rows]
+```
+
+실행 전 필요한 환경변수를 설정합니다. ([1.11](#111-배포-완료-확인) 의 `PG_NAME` · `PG_HOST` 환경변수를 사용합니다.)
+
+```bash
+# Linux · macOS · WSL
+export AZURE_OPENAI_ENDPOINT=$(az cognitiveservices account list -g rg-ai200ws-dev --query "[0].properties.endpoint" -o tsv)
+export AZURE_OPENAI_EMBED_DEPLOYMENT="text-embedding-3-large"
+export AZURE_OPENAI_API_VERSION="2024-08-01-preview"
+export COSMOS_ENDPOINT=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].documentEndpoint" -o tsv)
+export COSMOS_DATABASE="appdb"
+export COSMOS_CHUNKS_CONTAINER="chunks"
+export POSTGRES_HOST=$PG_HOST
+export POSTGRES_DATABASE="appdb"
+export POSTGRES_USER=$(az ad signed-in-user show --query userPrincipalName -o tsv)
+```
+
+```powershell
+# Windows PowerShell
+$env:AZURE_OPENAI_ENDPOINT = (az cognitiveservices account list -g rg-ai200ws-dev --query "[0].properties.endpoint" -o tsv)
+$env:AZURE_OPENAI_EMBED_DEPLOYMENT = "text-embedding-3-large"
+$env:AZURE_OPENAI_API_VERSION = "2024-08-01-preview"
+$env:COSMOS_ENDPOINT = (az cosmosdb list -g rg-ai200ws-dev --query "[0].documentEndpoint" -o tsv)
+$env:COSMOS_DATABASE = "appdb"
+$env:COSMOS_CHUNKS_CONTAINER = "chunks"
+$env:POSTGRES_HOST = $PG_HOST
+$env:POSTGRES_DATABASE = "appdb"
+$env:POSTGRES_USER = (az ad signed-in-user show --query userPrincipalName -o tsv)
+```
 
 ```bash
 # apps/api 의 의존성 환경으로 실행 (psycopg · pgvector · azure-cosmos 포함)
@@ -432,12 +598,17 @@ uv run --project apps/api python scripts/seed_both.py
 > ```bash
 > cp -a save-points/session-02/complete/. workshop/
 > ```
+>
+> ```powershell
+> # Windows PowerShell
+> Copy-Item -Path save-points/session-02/complete/* -Destination workshop -Recurse -Force
+> ```
 
 ---
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-02/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-03/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 위에 덮입니다)
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-02/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 bash: `cp -a save-points/session-03/start/. workshop/` · PowerShell: `Copy-Item -Path save-points/session-03/start/* -Destination workshop -Recurse -Force` 를 실행합니다 (다음 세션의 시작본이 위에 덮입니다)
 - **자원 정리** — PostgreSQL Flexible Server 는 컴퓨트 비용이 시간당 누적되므로, 본 세션 검증을 마치면 정리하는 것을 권장합니다. [session-03](./03-redis-cache.md) · [session-04](./04-async-ingestion.md) 에서 다시 사용할 때는 `infra/sessions/02-pgvector/main.bicep` 을 다시 배포해 재생성합니다. 정리 방법은 [docs/cleanup.md](../cleanup.md) 를 참고합니다
 - **다음 세션 미리보기** — [session-03](./03-redis-cache.md) 에서는 같은 질문을 두 번 호출하면 두 번째 응답을 빠르게 돌려주는 Managed Redis 시맨틱 캐시를 도입합니다
 

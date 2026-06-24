@@ -123,12 +123,28 @@ output workbookId string = workbook.outputs.id
 az bicep build --file infra/sessions/06-observability/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
 ```
 
+```powershell
+# Windows PowerShell
+az bicep build --file infra/sessions/06-observability/main.bicep --outfile "$env:TEMP\main.json"
+if ($?) { "BUILD OK" }
+```
+
 ```bash
 ALERT_EMAIL=$(az ad signed-in-user show --query mail -o tsv)
 az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/06-observability/main.bicep \
   --parameters infra/sessions/06-observability/main.bicepparam \
+  --parameters alertEmail=$ALERT_EMAIL
+```
+
+```powershell
+# Windows PowerShell
+$ALERT_EMAIL = (az ad signed-in-user show --query mail -o tsv)
+az deployment group create `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/06-observability/main.bicep `
+  --parameters infra/sessions/06-observability/main.bicepparam `
   --parameters alertEmail=$ALERT_EMAIL
 ```
 
@@ -142,8 +158,20 @@ az monitor scheduled-query list -g rg-ai200ws-dev \
   --query "[].{name:name, enabled:enabled, severity:severity}" -o table
 ```
 
+```powershell
+# Windows PowerShell
+az monitor scheduled-query list -g rg-ai200ws-dev `
+  --query "[].{name:name, enabled:enabled, severity:severity}" -o table
+```
+
 ```bash
 az resource list -g rg-ai200ws-dev --resource-type microsoft.insights/workbooks \
+  --query "[].name" -o table
+```
+
+```powershell
+# Windows PowerShell
+az resource list -g rg-ai200ws-dev --resource-type microsoft.insights/workbooks `
   --query "[].name" -o table
 ```
 
@@ -213,6 +241,18 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
+```powershell
+# Windows PowerShell
+$ACR_NAME = (az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+docker build --platform linux/amd64 -t "$ACR_NAME.azurecr.io/api:s06" apps/api
+docker push "$ACR_NAME.azurecr.io/api:s06"
+
+az containerapp update --name ca-api-ai200ws-dev --resource-group rg-ai200ws-dev `
+  --image "$ACR_NAME.azurecr.io/api:s06"
+$API_FQDN = (az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev `
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+```
+
 정상 트래픽으로 커스텀 span 과 메트릭을 채운 뒤, 의도적 오류로 오류율 알림을 발화시킵니다. `for` 루프 대신 크로스 플랫폼 헬퍼 스크립트를 `uv run` 으로 실행하므로 Windows·macOS·Linux 어디서나 동일하게 동작합니다.
 
 ```bash
@@ -220,8 +260,18 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 20
 ```
 
+```powershell
+# Windows PowerShell
+uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 20
+```
+
 ```bash
 # 오류율 알림 검증 — 의도적 500 을 10건 발생 (간격 필수)
+uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --chaos 10 --interval 3
+```
+
+```powershell
+# Windows PowerShell
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --chaos 10 --interval 3
 ```
 
@@ -308,7 +358,7 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-06/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-07/start/. workshop/` 를 실행합니다
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-06/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 bash: `cp -a save-points/session-07/start/. workshop/` · PowerShell: `Copy-Item -Path save-points/session-07/start/* -Destination workshop -Recurse -Force` 를 실행합니다
 - **자원 정리** — Workbook · Action Group · Log Search Alert 는 비용이 사실상 0 이라 정리하지 않습니다. Application Insights · Log Analytics Workspace 는 [session-00](./00-setup.md) 부터 사용 중이므로 챌린지 전체 정리 시점에 함께 정리합니다
 - **다음 세션 미리보기** — [session-07](./07-aks.md) 에서는 같은 RAG 워커로드를 Azure Container Apps 대신 Azure Kubernetes Service 로 배포해보고, K8s 매니페스트 · `kubectl` · Container Insights 로 두 호스팅 모델의 트레이드오프를 직접 비교합니다
 

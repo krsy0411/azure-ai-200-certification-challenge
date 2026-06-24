@@ -25,7 +25,17 @@ cp -a save-points/session-03/start/. workshop/
 Copy-Item -Path save-points/session-03/start/* -Destination workshop -Recurse -Force
 ```
 
-이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
+이후 본 세션의 모든 명령은 `workshop/` 안에서 실행합니다. 터미널을 `workshop/` 로 이동합니다.
+
+```bash
+# Linux · macOS · WSL
+cd workshop
+```
+
+```powershell
+# Windows PowerShell
+Set-Location workshop
+```
 
 학습자가 채우는 파일은 세 개입니다 : `infra/sessions/03-redis-cache/main.bicep` (모듈 조립), `apps/api/src/cache/redis_client.py` (Redis 클라이언트), `apps/api/src/cache/semantic.py` (시맨틱 캐시). 나머지는 완성되어 제공됩니다.
 
@@ -33,7 +43,7 @@ Copy-Item -Path save-points/session-03/start/* -Destination workshop -Recurse -F
 
 ## 1 단계 : 프로비저닝
 
-`workshop/infra/sessions/03-redis-cache/main.bicep` 을 열고, 아래 순서대로 각 주석을 찾아 코드를 채웁니다.
+`infra/sessions/03-redis-cache/main.bicep` 을 열고, 아래 순서대로 각 주석을 찾아 코드를 채웁니다.
 
 ### 1.1 호출할 모듈 한눈에 보기
 
@@ -113,8 +123,25 @@ output redisPort int = redisDatabase.outputs.port
 az bicep build --file infra/sessions/03-redis-cache/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
 ```
 
+```powershell
+# Windows PowerShell — $env:TEMP 는 Windows 임시 폴더
+az bicep build --file infra/sessions/03-redis-cache/main.bicep --outfile "$env:TEMP\main.json"
+if ($?) { "BUILD OK" }
+```
+
 ```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
+
+az deployment group what-if \
+  --resource-group rg-ai200ws-dev \
+  --template-file infra/sessions/03-redis-cache/main.bicep \
+  --parameters infra/sessions/03-redis-cache/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell
+$OID = (az ad signed-in-user show --query id -o tsv)
 
 az deployment group what-if `
   --resource-group rg-ai200ws-dev `
@@ -125,11 +152,29 @@ az deployment group what-if `
 
 what-if 결과가 의도대로면 `what-if` 를 `create` 로 바꿔 배포합니다.
 
+```bash
+# Linux · macOS · WSL — create 로 실제 배포
+az deployment group create \
+  --resource-group rg-ai200ws-dev \
+  --template-file infra/sessions/03-redis-cache/main.bicep \
+  --parameters infra/sessions/03-redis-cache/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell — create 로 실제 배포
+az deployment group create `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/03-redis-cache/main.bicep `
+  --parameters infra/sessions/03-redis-cache/main.bicepparam `
+  --parameters userObjectId=$OID
+```
+
 > [!NOTE]
 > Azure Managed Redis 클러스터 생성에 약 **8~12분** 소요됩니다. 본 챌린지에서 가장 오래 걸리는 배포 중 하나입니다.
 
 > [!CAUTION]
-> **비용 안내** — Managed Redis 는 본 챌린지에서 가장 비싼 idle 자원입니다 (최소 등급 Balanced_B0 라도 시간당 누적). 세션을 마친 뒤에는 즉시 [자원 정리](../cleanup.md) 를 수행하는 것을 권장합니다.
+> **비용 안내** — Managed Redis 는 compute 가 살아있는 idle 자원이라, 본 챌린지가 쓰는 최소 등급 `Balanced_B0` 라도 시간당 비용이 누적됩니다 (더 큰 등급일수록 빠르게 누적). 세션을 마친 뒤에는 즉시 [자원 정리](../cleanup.md) 를 수행하는 것을 권장합니다.
 
 ### 1.6 배포 완료 확인
 
@@ -140,6 +185,15 @@ REDIS_NAME=$(az redisenterprise list -g rg-ai200ws-dev --query "[0].name" -o tsv
 REDIS_HOST=$(az redisenterprise list -g rg-ai200ws-dev --query "[0].hostName" -o tsv)
 
 az redisenterprise show -n $REDIS_NAME -g rg-ai200ws-dev \
+  --query "{state:resourceState, sku:sku.name, host:hostName}" -o jsonc
+```
+
+```powershell
+# Windows PowerShell
+$REDIS_NAME = (az redisenterprise list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+$REDIS_HOST = (az redisenterprise list -g rg-ai200ws-dev --query "[0].hostName" -o tsv)
+
+az redisenterprise show -n $REDIS_NAME -g rg-ai200ws-dev `
   --query "{state:resourceState, sku:sku.name, host:hostName}" -o jsonc
 ```
 
@@ -272,6 +326,24 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
+```powershell
+# Windows PowerShell
+$ACR_NAME = (az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+az acr login --name $ACR_NAME
+
+docker build --platform linux/amd64 -t "$ACR_NAME.azurecr.io/api:s03" apps/api
+docker push "$ACR_NAME.azurecr.io/api:s03"
+
+az containerapp update `
+  --name ca-api-ai200ws-dev `
+  --resource-group rg-ai200ws-dev `
+  --image "$ACR_NAME.azurecr.io/api:s03" `
+  --set-env-vars CACHE_ENABLED=true "REDIS_HOST=$REDIS_HOST"
+
+$API_FQDN = (az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev `
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+```
+
 의미는 같지만 표현이 다른 두 질문으로 캐시 효과를 측정합니다.
 
 ```bash
@@ -284,6 +356,21 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 time curl -sX POST "https://$API_FQDN/api/chat" \
   -H "Content-Type: application/json" \
   -d '{"q": "휴가 규정이 어떻게 돼?"}' > /dev/null
+```
+
+```powershell
+# Windows PowerShell — Measure-Command 로 응답 시간 측정
+(Measure-Command {
+  Invoke-RestMethod -Method Post -Uri "https://$API_FQDN/api/chat" `
+    -ContentType "application/json" `
+    -Body '{"q": "회사 휴가 정책 알려줘"}'
+}).TotalSeconds
+
+(Measure-Command {
+  Invoke-RestMethod -Method Post -Uri "https://$API_FQDN/api/chat" `
+    -ContentType "application/json" `
+    -Body '{"q": "휴가 규정이 어떻게 돼?"}'
+}).TotalSeconds
 ```
 
 기대 — 첫 호출은 약 800~1500ms, 두 번째 호출은 그보다 크게 짧습니다.
@@ -305,6 +392,15 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
    TOKEN=$(az account get-access-token --scope https://redis.azure.com/.default --query accessToken -o tsv)
 
    # --user = access policy 에 부여된 Entra object ID, --pass = Entra 액세스 토큰(약 1시간 유효)
+   redis-cli -h "$HOST" -p 10000 --tls --user "$OID" --pass "$TOKEN" --no-auth-warning
+   ```
+
+   ```powershell
+   # Windows PowerShell
+   $HOST = (az redisenterprise list -g rg-ai200ws-dev --query "[0].hostName" -o tsv)
+   $OID = (az ad signed-in-user show --query id -o tsv)
+   $TOKEN = (az account get-access-token --scope https://redis.azure.com/.default --query accessToken -o tsv)
+
    redis-cli -h "$HOST" -p 10000 --tls --user "$OID" --pass "$TOKEN" --no-auth-warning
    ```
 
@@ -363,12 +459,17 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 > ```bash
 > cp -a save-points/session-03/complete/. workshop/
 > ```
+>
+> ```powershell
+> # Windows PowerShell
+> Copy-Item -Path save-points/session-03/complete/* -Destination workshop -Recurse -Force
+> ```
 
 ---
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-03/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-04/start/. workshop/` 를 실행합니다
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-03/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 bash: `cp -a save-points/session-04/start/. workshop/` · PowerShell: `Copy-Item -Path save-points/session-04/start/* -Destination workshop -Recurse -Force` 를 실행합니다
 - **자원 정리** — Managed Redis 는 idle 비용이 누적됩니다. 본 세션 학습이 끝났다면 [자원 정리](../cleanup.md) 의 Redis 정리 절차로 즉시 정리하는 것을 권장합니다. 후속 세션에서 캐시를 다시 쓰려면 본 세션 Bicep 을 재배포합니다
 - **다음 세션 미리보기** — [session-04](./04-async-ingestion.md) 에서는 동기 호출이 아닌 비동기 인제스션 (ingestion) 파이프라인을 구축합니다. Blob 업로드 한 번이 Event Grid → Service Bus → Azure Functions 경로로 자동 청크 분할 · 임베드 · 적재됩니다
 

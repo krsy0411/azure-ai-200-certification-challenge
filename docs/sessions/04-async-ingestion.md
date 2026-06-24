@@ -275,6 +275,12 @@ output systemTopicName string = systemTopic.outputs.name
 az bicep build --file infra/sessions/04-async-ingestion/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
 ```
 
+```powershell
+# Windows PowerShell
+az bicep build --file infra/sessions/04-async-ingestion/main.bicep --outfile "$env:TEMP\main.json"
+if ($?) { "BUILD OK" }
+```
+
 ```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
 
@@ -282,6 +288,17 @@ az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/04-async-ingestion/main.bicep \
   --parameters infra/sessions/04-async-ingestion/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell
+$OID = (az ad signed-in-user show --query id -o tsv)
+
+az deployment group create `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/04-async-ingestion/main.bicep `
+  --parameters infra/sessions/04-async-ingestion/main.bicepparam `
   --parameters userObjectId=$OID
 ```
 
@@ -304,6 +321,18 @@ az resource show -g rg-ai200ws-dev -n $FUNC --resource-type Microsoft.Web/sites 
 
 # 큐가 DLQ 정책과 함께 만들어졌는지
 az servicebus queue show -g rg-ai200ws-dev --namespace-name $SB --name ingest-queue \
+  --query "{status:status, maxDeliveryCount:maxDeliveryCount}" -o jsonc
+```
+
+```powershell
+# Windows PowerShell
+$FUNC = (az functionapp list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+$SB = (az servicebus namespace list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+
+az resource show -g rg-ai200ws-dev -n $FUNC --resource-type Microsoft.Web/sites `
+  --query "{state:properties.state, runtime:properties.functionAppConfig.runtime}" -o jsonc
+
+az servicebus queue show -g rg-ai200ws-dev --namespace-name $SB --name ingest-queue `
   --query "{status:status, maxDeliveryCount:maxDeliveryCount}" -o jsonc
 ```
 
@@ -420,6 +449,13 @@ func azure functionapp publish $FUNC --python --build remote
 cd ../..
 ```
 
+```powershell
+# Windows PowerShell
+Set-Location apps/functions
+func azure functionapp publish $FUNC --python --build remote
+Set-Location ../..
+```
+
 ### 2.3 E2E 테스트 — 업로드 후 양쪽 인덱스 도착 확인
 
 ```bash
@@ -431,11 +467,27 @@ cat > /tmp/sample-policy.md <<'EOF'
 EOF
 ```
 
+```powershell
+# Windows PowerShell — here-string 으로 파일 생성
+@"
+# 휴가 규정
+- 연간 휴가는 15일입니다.
+- 6개월 근속 후부터 사용 가능합니다.
+"@ | Set-Content "$env:TEMP\sample-policy.md" -Encoding utf8
+```
+
 ```bash
 # 2) Entra ID 인증 업로드
 STORAGE=$(az storage account list -g rg-ai200ws-dev --query "[?starts_with(name,'st')].name | [0]" -o tsv)
 az storage blob upload --account-name $STORAGE --container-name documents \
   --file /tmp/sample-policy.md --name policy/sample-policy.md --auth-mode login
+```
+
+```powershell
+# Windows PowerShell
+$STORAGE = (az storage account list -g rg-ai200ws-dev --query "[?starts_with(name,'st')].name | [0]" -o tsv)
+az storage blob upload --account-name $STORAGE --container-name documents `
+  --file "$env:TEMP\sample-policy.md" --name policy/sample-policy.md --auth-mode login
 ```
 
 ```bash
@@ -458,6 +510,25 @@ print("chunks(sample-policy) =", n)
 PY
 ```
 
+```powershell
+# Windows PowerShell
+Start-Sleep -Seconds 30
+$COSMOS = (az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+$env:COSMOS_ENDPOINT = "https://$COSMOS.documents.azure.com:443/"
+$pyScript = @'
+import os
+from azure.cosmos import CosmosClient
+from azure.identity import AzureCliCredential
+chunks = (CosmosClient(os.environ["COSMOS_ENDPOINT"], credential=AzureCliCredential())
+          .get_database_client("appdb").get_container_client("chunks"))
+n = list(chunks.query_items(
+    "SELECT VALUE COUNT(1) FROM c WHERE c.doc_id='sample-policy'",
+    partition_key="sample-policy"))[0]
+print("chunks(sample-policy) =", n)
+'@
+$pyScript | uv run --no-project --python 3.12 --with azure-cosmos --with azure-identity python -
+```
+
 기대 — `chunks(sample-policy) =` 뒤에 0 이 아닌 정수 (청크 개수).
 
 ```bash
@@ -468,6 +539,17 @@ UPN=$(az ad signed-in-user show --query userPrincipalName -o tsv)
 PGPASSWORD=$(az account get-access-token \
   --resource https://ossrdbms-aad.database.windows.net --query accessToken -o tsv) \
 psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
+  -c "SELECT COUNT(*) FROM chunks WHERE doc_id = 'sample-policy';"
+```
+
+```powershell
+# Windows PowerShell
+$PG_HOST = (az postgres flexible-server list -g rg-ai200ws-dev --query "[0].fullyQualifiedDomainName" -o tsv)
+$UPN = (az ad signed-in-user show --query userPrincipalName -o tsv)
+
+$env:PGPASSWORD = (az account get-access-token `
+  --resource https://ossrdbms-aad.database.windows.net --query accessToken -o tsv)
+psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" `
   -c "SELECT COUNT(*) FROM chunks WHERE doc_id = 'sample-policy';"
 ```
 
@@ -536,6 +618,22 @@ print("잘못된 메시지 송신 완료")
 PY
 ```
 
+```powershell
+# Windows PowerShell
+$SB = (az servicebus namespace list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+$env:SB_FQDN = "$SB.servicebus.windows.net"
+$pyScript = @'
+import os
+from azure.servicebus import ServiceBusClient, ServiceBusMessage
+from azure.identity import AzureCliCredential
+with ServiceBusClient(os.environ["SB_FQDN"], AzureCliCredential()) as client:
+    with client.get_queue_sender("ingest-queue") as sender:
+        sender.send_messages(ServiceBusMessage('{"invalid": true}'))
+print("잘못된 메시지 송신 완료")
+'@
+$pyScript | uv run --no-project --python 3.12 --with azure-servicebus --with azure-identity python -
+```
+
 약 1~2분 후 Portal 의 **Dead-lettered Messages** 카운트가 1 로 증가합니다.
 
 ![잘못된 메시지가 5회 재시도 후 Dead-letter 큐로 이동해 Dead-lettered Messages 카운트가 증가한 Service Bus 의 Azure Portal 스크린샷](images/session-04/04-07-servicebus-deadletter-01.png)
@@ -545,7 +643,7 @@ PY
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-04/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-05/start/. workshop/` 를 실행합니다
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-04/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 bash: `cp -a save-points/session-05/start/. workshop/` · PowerShell: `Copy-Item -Path save-points/session-05/start/* -Destination workshop -Recurse -Force` 를 실행합니다
 - **자원 정리** — Service Bus · Function App · Storage 는 후속 세션에서 직접 사용되지 않고 idle 비용·관리면이 누적됩니다. 본 세션 학습이 끝났다면 [자원 정리](../cleanup.md) 로 정리하는 것을 권장합니다 (Log Analytics · ACR 같은 무료 자원은 보존). 다시 실험하려면 본 세션 Bicep 을 재배포합니다
 - **다음 세션 미리보기** — [session-05](./05-app-config-flags.md) 에서는 환경변수에 들어있던 `CACHE_ENABLED` 같은 토글을 App Configuration 으로 분리해, 코드 재배포 없이 포털에서 토글하는 패턴을 도입합니다
 

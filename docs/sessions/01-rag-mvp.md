@@ -24,7 +24,17 @@ cp -a save-points/session-01/start/. workshop/
 Copy-Item -Path save-points/session-01/start/* -Destination workshop -Recurse -Force
 ```
 
-이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
+작업 폴더로 이동합니다. **이후 본 세션의 모든 명령은 이 `workshop/` 안에서 실행합니다.** (새 터미널을 열 때마다 다시 `cd workshop` 합니다.)
+
+```bash
+# Linux · macOS · WSL
+cd workshop
+```
+
+```powershell
+# Windows PowerShell
+Set-Location workshop
+```
 
 시작본을 열어보면 다음 두 종류의 빈칸이 비어 있습니다. 본 세션에서 순서대로 채웁니다.
 
@@ -144,6 +154,8 @@ module cosmosChunksContainer '../../modules/session-01/cosmos-sql-container.bice
 
 ```bicep
 // -------- 4) Key Vault Secret — Azure OpenAI endpoint URL ----------------------
+//             endpoint URL 자체는 시크릿이 아니지만, Key Vault 에 저장하고 코드에서
+//             SDK 로 읽어오는 Key Vault reference 패턴을 학습하기 위해 한 개를 저장한다.
 
 module aoaiEndpointSecret '../../modules/session-01/key-vault-secret.bicep' = {
   name: 'aoaiEndpointSecret'
@@ -192,10 +204,11 @@ module kvSecretsRoleUami '../../modules/session-01/role-assignment-keyvault-secr
 
 ### 1.7 (필수) 사용자 계정에도 Cosmos data plane · Key Vault Secrets 부여
 
-`// -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 모듈 호출하기` 힌트 주석을 찾아 다음 두 모듈로 교체합니다. 이 블록은 **본인 계정**에 Cosmos 데이터플레인 (`Cosmos DB Built-in Data Contributor`) 권한을 부여합니다. [4 단계 : Cosmos 시드](#4-단계--cosmos-시드) 가 본인 `az login` 자격으로 Cosmos 에 쓰고 6단계 Data Explorer 도 같은 권한을 요구하므로 **필수**이며, 그래서 표준 배포 (3단계) 가 항상 `userObjectId` 를 넘깁니다. Bicep 의 `if (!empty(userObjectId))` 는 값을 안 넘기면 건너뛰는 조건부 모듈일 뿐이니, 워크샵에서는 반드시 채워 배포합니다. (함께 부여되는 Key Vault Secrets 권한은 본인이 시크릿을 직접 읽어볼 때만 쓰는 보너스입니다.) 사용자 계정이므로 `principalType` 은 `User` 입니다.
+`// -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 모듈 호출하기` 힌트 주석을 찾아 다음 두 모듈로 교체합니다. 이 블록은 **본인 계정**에 Cosmos 데이터플레인 (`Cosmos DB Built-in Data Contributor`) 권한을 부여합니다. [4 단계 : Cosmos 시드](#4-단계--cosmos-시드) 가 본인 `az login` 자격으로 Cosmos 에 쓰고 6단계 Data Explorer 도 같은 권한을 요구하므로 **필수**이며, 그래서 표준 배포 (3단계) 가 항상 `userObjectId` 를 넘깁니다. Bicep 의 `if (!empty(userObjectId))` 는 값을 안 넘기면 건너뛰는 조건부 모듈일 뿐이니, 본 챌린지에서는 반드시 채워 배포합니다. (함께 부여되는 Key Vault Secrets 권한은 본인이 시크릿을 직접 읽어볼 때만 쓰는 보너스입니다.) 사용자 계정이므로 `principalType` 은 `User` 입니다.
 
 ```bicep
 // -------- 6) 사용자에게도 Cosmos data plane · Key Vault Secrets 부여 -----------
+//             로컬 개발 시 az login 자격으로 데이터 확인이 가능하도록.
 
 module cosmosDataRoleUser '../../modules/session-01/role-assignment-cosmos-data-contributor.bicep' = if (!empty(userObjectId)) {
   name: 'cosmosDataRole-user'
@@ -318,9 +331,10 @@ module caWeb '../../modules/session-01/container-app.bicep' = {
     ]
     tags: commonTags
   }
+  // caWeb 는 envVars 에서 caApi.outputs.fqdn 을 참조하므로 caApi 의존은 자동으로 잡힌다.
+  // ACR pull 권한만 명시적으로 먼저 끝나도록 dependsOn 에 둔다.
   dependsOn: [
     acrPullRoleUami
-    caApi
   ]
 }
 ```
@@ -358,6 +372,11 @@ az bicep build --file infra/sessions/01-rag-mvp/main.bicep --stdout > /dev/null 
 >
 > ```bash
 > cp -a save-points/session-01/complete/. workshop/
+> ```
+>
+> ```powershell
+> # Windows PowerShell
+> Copy-Item -Path save-points/session-01/complete/* -Destination workshop -Recurse -Force
 > ```
 
 ---
@@ -789,6 +808,17 @@ az deployment group what-if \
   --parameters userObjectId=$OID
 ```
 
+```powershell
+# Windows PowerShell
+$OID = (az ad signed-in-user show --query id -o tsv)
+
+az deployment group what-if `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/01-rag-mvp/main.bicep `
+  --parameters infra/sessions/01-rag-mvp/main.bicepparam `
+  --parameters userObjectId=$OID
+```
+
 > [!NOTE]
 > `what-if` 출력에서 `AcrPull` 역할 할당이 `Unsupported` 로 표기되는 경우가 있습니다. 해당 경우는 정상이며, 실제 배포는 성공합니다.
 
@@ -799,6 +829,15 @@ az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/01-rag-mvp/main.bicep \
   --parameters infra/sessions/01-rag-mvp/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell
+az deployment group create `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/01-rag-mvp/main.bicep `
+  --parameters infra/sessions/01-rag-mvp/main.bicepparam `
   --parameters userObjectId=$OID
 ```
 
@@ -821,6 +860,16 @@ COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 az cosmosdb show \
   --name $COSMOS \
   --resource-group rg-ai200ws-dev \
+  --query "{state:provisioningState, kind:kind}" -o jsonc
+```
+
+```powershell
+# Windows PowerShell
+$COSMOS = (az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+
+az cosmosdb show `
+  --name $COSMOS `
+  --resource-group rg-ai200ws-dev `
   --query "{state:provisioningState, kind:kind}" -o jsonc
 ```
 
@@ -869,6 +918,19 @@ export AZURE_OPENAI_EMBED_DEPLOYMENT=text-embedding-3-large
 export AZURE_OPENAI_API_VERSION=2024-08-01-preview
 ```
 
+```powershell
+# Windows PowerShell
+$COSMOS = (az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+$env:COSMOS_ENDPOINT = (az cosmosdb show -n $COSMOS -g rg-ai200ws-dev --query documentEndpoint -o tsv)
+$env:COSMOS_DATABASE = "appdb"
+$env:COSMOS_CHUNKS_CONTAINER = "chunks"
+
+$OPENAI = (az cognitiveservices account list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+$env:AZURE_OPENAI_ENDPOINT = (az cognitiveservices account show -n $OPENAI -g rg-ai200ws-dev --query properties.endpoint -o tsv)
+$env:AZURE_OPENAI_EMBED_DEPLOYMENT = "text-embedding-3-large"
+$env:AZURE_OPENAI_API_VERSION = "2024-08-01-preview"
+```
+
 환경변수를 설정한 뒤 시드 스크립트를 실행합니다. `apps/api` 의 의존성 환경을 그대로 사용합니다.
 
 ```bash
@@ -901,6 +963,16 @@ az cosmosdb sql container show \
   --query "name" -o tsv
 ```
 
+```powershell
+# Windows PowerShell
+az cosmosdb sql container show `
+  --account-name $COSMOS `
+  --database-name appdb `
+  --name chunks `
+  --resource-group rg-ai200ws-dev `
+  --query "name" -o tsv
+```
+
 > [!NOTE]
 > **`quantizedFlat` 인덱스 비동기 빌드** — 시드 직후 잠깐 동안은 벡터 인덱스가 백그라운드로 빌드되어 벡터 검색이 0개 결과를 반환할 수 있습니다. 에러가 아니라 정상이므로, 검색 결과가 비면 잠시 후 다시 호출합니다 ([docs/pitfalls/common.md](../pitfalls/common.md) 참고).
 
@@ -916,16 +988,34 @@ ACR_NAME=$(az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 az acr login --name $ACR_NAME
 ```
 
+```powershell
+# Windows PowerShell — 1) Azure Container Registry 로그인
+$ACR_NAME = (az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+az acr login --name $ACR_NAME
+```
+
 ```bash
 # 2) API 이미지 빌드 — ARM Mac 환경에서도 amd64 노드와 일치하도록 --platform 필수
 docker build --platform linux/amd64 -t $ACR_NAME.azurecr.io/api:s01 apps/api
 docker push $ACR_NAME.azurecr.io/api:s01
 ```
 
+```powershell
+# Windows PowerShell — 2) API 이미지 빌드
+docker build --platform linux/amd64 -t "$ACR_NAME.azurecr.io/api:s01" apps/api
+docker push "$ACR_NAME.azurecr.io/api:s01"
+```
+
 ```bash
 # 3) web 이미지 빌드
 docker build --platform linux/amd64 -t $ACR_NAME.azurecr.io/web:s01 apps/web
 docker push $ACR_NAME.azurecr.io/web:s01
+```
+
+```powershell
+# Windows PowerShell — 3) web 이미지 빌드
+docker build --platform linux/amd64 -t "$ACR_NAME.azurecr.io/web:s01" apps/web
+docker push "$ACR_NAME.azurecr.io/web:s01"
 ```
 
 ```bash
@@ -941,11 +1031,32 @@ az containerapp update \
   --image $ACR_NAME.azurecr.io/web:s01
 ```
 
+```powershell
+# Windows PowerShell — 4) Azure Container Apps revision 업데이트
+az containerapp update `
+  --name ca-api-ai200ws-dev `
+  --resource-group rg-ai200ws-dev `
+  --image "$ACR_NAME.azurecr.io/api:s01"
+
+az containerapp update `
+  --name ca-web-ai200ws-dev `
+  --resource-group rg-ai200ws-dev `
+  --image "$ACR_NAME.azurecr.io/web:s01"
+```
+
 ```bash
 # 5) API 외부 FQDN 가져오기
 API_FQDN=$(az containerapp show \
   -n ca-api-ai200ws-dev \
   -g rg-ai200ws-dev \
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+```
+
+```powershell
+# Windows PowerShell — 5) API 외부 FQDN 가져오기
+$API_FQDN = (az containerapp show `
+  -n ca-api-ai200ws-dev `
+  -g rg-ai200ws-dev `
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
@@ -956,6 +1067,13 @@ curl -X POST "https://$API_FQDN/api/chat" \
   -d '{"q": "연차 휴가 신청 방법 알려줘"}' | jq
 ```
 
+```powershell
+# Windows PowerShell — 6) 호출 (jq 대신 ConvertTo-Json)
+Invoke-RestMethod -Method Post -Uri "https://$API_FQDN/api/chat" `
+  -ContentType "application/json" `
+  -Body '{"q": "연차 휴가 신청 방법 알려줘"}' | ConvertTo-Json
+```
+
 다음과 비슷한 출력이 표시됩니다.
 
 ```
@@ -963,7 +1081,10 @@ curl -X POST "https://$API_FQDN/api/chat" \
   "answer": "연차 신청은 사내 포털에서 진행하며, 승인권자는 팀장입니다. 처리 기한과 필요 서류는 휴가 정책 문서를 따릅니다.",
   "sources": [
     { "doc_id": "휴가-연차_신청_절차-본사", "title": "[휴가] 연차 신청 절차 (본사)", "score": 0.612 },
-    { "doc_id": "휴가-연차_신청_절차-판교_지사", "title": "[휴가] 연차 신청 절차 (판교 지사)", "score": 0.598 }
+    { "doc_id": "휴가-연차_신청_절차-판교_지사", "title": "[휴가] 연차 신청 절차 (판교 지사)", "score": 0.598 },
+    { "doc_id": "휴가-연차_신청_절차-대전_지사", "title": "[휴가] 연차 신청 절차 (대전 지사)", "score": 0.571 },
+    { "doc_id": "휴가-반차_사용_규정-판교_지사", "title": "[휴가] 반차 사용 규정 (판교 지사)", "score": 0.544 },
+    { "doc_id": "휴가-반차_사용_규정-원격", "title": "[휴가] 반차 사용 규정 (원격)", "score": 0.522 }
   ]
 }
 ```
@@ -1053,12 +1174,17 @@ curl -X POST "https://$API_FQDN/api/chat" \
 > ```bash
 > cp -a save-points/session-01/complete/. workshop/
 > ```
+>
+> ```powershell
+> # Windows PowerShell
+> Copy-Item -Path save-points/session-01/complete/* -Destination workshop -Recurse -Force
+> ```
 
 ---
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-01/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-02/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-01/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 bash: `cp -a save-points/session-02/start/. workshop/` · PowerShell: `Copy-Item -Path save-points/session-02/start/* -Destination workshop -Recurse -Force` 를 실행합니다 (다음 세션의 시작본이 `workshop/` 위에 덮입니다)
 - **자원 정리** — 이 세션의 자원들은 session-02 이후에서 계속 사용됩니다. 정리하지 않습니다
 - **다음 세션 미리보기** — session-02 에서는 Cosmos DB 만으로는 알 수 없는 PostgreSQL pgvector 의 강점 (표준 SQL 디버깅, `EXPLAIN ANALYZE`) 을 같은 데이터로 직접 비교합니다
 

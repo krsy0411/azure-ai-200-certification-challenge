@@ -26,7 +26,16 @@ New-Item -ItemType Directory -Force -Path workshop | Out-Null
 Copy-Item -Path save-points/session-00/start/* -Destination workshop -Recurse -Force
 ```
 
-이후 본 세션의 모든 명령은 `workshop/` 안에서 실행한다고 가정합니다.
+작업 폴더로 이동합니다. **이후 본 세션의 모든 명령은 이 `workshop/` 안에서 실행합니다.** (새 터미널을 열 때마다 다시 `cd workshop` 합니다.)
+
+```bash
+cd workshop
+```
+
+```powershell
+# Windows PowerShell
+Set-Location workshop
+```
 
 시작본의 `infra/sessions/00-setup/main.bicep` 을 열어보면, 파라미터·공용 태그·자원 이름 변수는 이미 채워져 있고 **8개 모듈 호출 블록과 출력 블록이 한국어 주석으로 비어 있습니다**. 호출할 모듈 본체 (`infra/modules/session-00/*.bicep`) 는 완성되어 있으므로 수정하지 않습니다. [2 단계 : Bicep 모듈 조립](#2-단계--bicep-모듈-조립) 에서 이 빈 블록을 순서대로 채웁니다.
 
@@ -189,7 +198,7 @@ module appInsights '../../modules/session-00/application-insights.bicep' = {
 
 ### 2.4 Key Vault
 
-`// -------- 3) Key Vault 모듈 호출하기` 주석 아래에 추가합니다. 개발 환경이라도 purge protection 을 켜두면 soft-delete 충돌을 피할 수 있습니다.
+`// -------- 3) Key Vault 모듈 호출하기` 주석 아래에 추가합니다. 이 모듈은 개발 환경에서도 purge protection 을 켜서 배포합니다 — 이 선택이 정리·재배포에 갖는 함의는 아래 경고를 먼저 확인합니다.
 
 ```bicep
 module kv '../../modules/session-00/key-vault.bicep' = {
@@ -207,6 +216,13 @@ module kv '../../modules/session-00/key-vault.bicep' = {
   ]
 }
 ```
+
+> [!WARNING]
+> **Key Vault 는 한 번 삭제하면 7일간 같은 이름으로 다시 만들 수 없습니다 — purge 도 불가능합니다.**
+>
+> 이 모듈은 `enablePurgeProtection: true` 로 배포되고, Key Vault 이름은 `uniqueString(subscription().id, projectId, env)` 라 **고정 시드**입니다. 즉 정리 후 재배포해도 **항상 같은 이름**이 나옵니다. 그런데 purge protection 이 켜진 Key Vault 는 soft-delete 후 보존 기간 (본 챌린지는 7일) 이 지나기 전에는 **누구도 (Microsoft 포함) purge 할 수 없고**, 그동안 이름이 전역 예약되어 같은 이름의 새 Vault 생성도 막힙니다. 이 모듈에는 `createMode: 'recover'` 가 없으므로, 7일 안에 같은 이름으로 재배포하면 `VaultAlreadyExists` 로 실패합니다.
+>
+> 그래서 자원을 정리할 때 **Key Vault 는 삭제하지 않고 그대로 둡니다** (비용이 사실상 0 이고 후속 세션·재배포가 그대로 재사용). 전체 teardown 을 하더라도 Key Vault 만 남기고 나머지를 지우는 것이 안전합니다. 실수로 지웠다면 `az keyvault recover` 로 복구하거나 (soft-delete 시 RBAC 역할 할당은 사라지므로 재배포로 재부여 필요) 7일 경과 후 자동 purge 를 기다립니다. → [공통 함정 — Soft-delete 7일 이름 충돌](../pitfalls/common.md#bicep--iac)
 
 ### 2.5 User Assigned Managed Identity
 
@@ -370,7 +386,9 @@ az bicep build --file infra/sessions/00-setup/main.bicep --stdout > /dev/null &&
 ```bash
 # 본인 objectId 를 환경변수로 저장
 OID=$(az ad signed-in-user show --query id -o tsv)
+```
 
+```bash
 # 무엇이 만들어지는지 먼저 확인
 az deployment sub what-if \
   --location koreacentral \
@@ -379,6 +397,20 @@ az deployment sub what-if \
   --parameters userObjectId=$OID
 ```
 
+```powershell
+# Windows PowerShell
+$OID = (az ad signed-in-user show --query id -o tsv)
+
+az deployment sub what-if `
+  --location koreacentral `
+  --template-file infra/sessions/00-setup/main.bicep `
+  --parameters infra/sessions/00-setup/main.bicepparam `
+  --parameters userObjectId=$OID
+```
+
+> [!NOTE]
+> 출력 끝에 역할 할당이 `Unsupported` 로 표시되고 `Diagnostics` 메시지 (`...cannot be analyzed because its resource ID or API version cannot be calculated until the deployment is under way`) 가 함께 나오는 것은 **정상**입니다. 역할 할당의 리소스 ID 는 배포가 시작되어야 계산되므로 what-if 가 미리 분석하지 못할 뿐, 실제 배포에서는 정상 생성됩니다. 에러가 아닙니다.
+
 ### 3.2 실제 배포
 
 ```bash
@@ -386,6 +418,15 @@ az deployment sub create \
   --location koreacentral \
   --template-file infra/sessions/00-setup/main.bicep \
   --parameters infra/sessions/00-setup/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell
+az deployment sub create `
+  --location koreacentral `
+  --template-file infra/sessions/00-setup/main.bicep `
+  --parameters infra/sessions/00-setup/main.bicepparam `
   --parameters userObjectId=$OID
 ```
 
@@ -407,6 +448,16 @@ ACCOUNT=$(az cognitiveservices account list -g rg-ai200ws-dev --query "[0].name"
 az cognitiveservices account deployment list \
   -n $ACCOUNT \
   -g rg-ai200ws-dev \
+  --query "[].{name:name, model:properties.model.name, sku:sku.name}" -o table
+```
+
+```powershell
+# Windows PowerShell
+$ACCOUNT = (az cognitiveservices account list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+
+az cognitiveservices account deployment list `
+  -n $ACCOUNT `
+  -g rg-ai200ws-dev `
   --query "[].{name:name, model:properties.model.name, sku:sku.name}" -o table
 ```
 
@@ -458,7 +509,7 @@ text-embedding-3-large     text-embedding-3-large      Standard
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-00/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-01/start/. workshop/` 를 실행합니다 (다음 세션의 시작본이 위에 덮입니다)
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-00/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 bash: `cp -a save-points/session-01/start/. workshop/` · PowerShell: `Copy-Item -Path save-points/session-01/start/* -Destination workshop -Recurse -Force` 를 실행합니다 (다음 세션의 시작본이 위에 덮입니다)
 - **자원 정리** — 이 세션의 자원들은 후속 세션 전부에서 재사용됩니다. **정리하지 않습니다** (챌린지 끝에 한 번에 정리)
 - **다음 세션 미리보기** — session-01 에서는 방금 만든 Azure OpenAI · Key Vault · User Assigned Managed Identity 를 묶어 Azure Container Apps 위에 RAG MVP 를 올립니다
 

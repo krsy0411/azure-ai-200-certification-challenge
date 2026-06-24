@@ -177,6 +177,12 @@ output appConfigEndpoint string = appConfig.outputs.endpoint
 az bicep build --file infra/sessions/05-app-config-flags/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
 ```
 
+```powershell
+# Windows PowerShell
+az bicep build --file infra/sessions/05-app-config-flags/main.bicep --outfile "$env:TEMP\main.json"
+if ($?) { "BUILD OK" }
+```
+
 ```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
 
@@ -184,6 +190,17 @@ az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/05-app-config-flags/main.bicep \
   --parameters infra/sessions/05-app-config-flags/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell
+$OID = (az ad signed-in-user show --query id -o tsv)
+
+az deployment group create `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/05-app-config-flags/main.bicep `
+  --parameters infra/sessions/05-app-config-flags/main.bicepparam `
   --parameters userObjectId=$OID
 ```
 
@@ -196,6 +213,16 @@ az deployment group create \
 AC=$(az appconfig list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 
 az appconfig show -n $AC -g rg-ai200ws-dev \
+  --query "{state:provisioningState, sku:sku.name, endpoint:endpoint}" -o jsonc
+
+az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
+```
+
+```powershell
+# Windows PowerShell
+$AC = (az appconfig list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+
+az appconfig show -n $AC -g rg-ai200ws-dev `
   --query "{state:provisioningState, sku:sku.name, endpoint:endpoint}" -o jsonc
 
 az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
@@ -245,6 +272,23 @@ API_FQDN=$(az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
+```powershell
+# Windows PowerShell
+$ACR_NAME = (az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
+docker build --platform linux/amd64 -t "$ACR_NAME.azurecr.io/api:s05" apps/api
+docker push "$ACR_NAME.azurecr.io/api:s05"
+
+$AC_ENDPOINT = (az appconfig show -n $AC -g rg-ai200ws-dev --query endpoint -o tsv)
+az containerapp update `
+  --name ca-api-ai200ws-dev `
+  --resource-group rg-ai200ws-dev `
+  --image "$ACR_NAME.azurecr.io/api:s05" `
+  --set-env-vars "APP_CONFIG_ENDPOINT=$AC_ENDPOINT"
+
+$API_FQDN = (az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev `
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+```
+
 여기서는 CLI 로 ON/OFF 효과를 빠르게 확인합니다. Portal 토글로 절벽 차트를 만드는 본 캡쳐 시퀀스는 [3 단계 : Azure Portal UI 에서 확인](#3-단계--azure-portal-ui-에서-확인) 에서 진행합니다.
 
 캐시 ON 상태에서 검증용 트래픽을 흘려, hot 질문이 캐시 hit 으로 즉시 반환되는지 확인합니다. 헬퍼 스크립트는 hot 질문 (캐시 hit 유발) 과 다양한 질문 (retrieve+generate = miss 유발) 을 번갈아 보냅니다.
@@ -260,6 +304,13 @@ CLI 로 피처 플래그를 OFF 로 토글하고, 폴링 주기만큼 대기한 
 ```bash
 az appconfig feature disable -n $AC --feature enable_semantic_cache --yes
 sleep 60
+uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 6
+```
+
+```powershell
+# Windows PowerShell
+az appconfig feature disable -n $AC --feature enable_semantic_cache --yes
+Start-Sleep -Seconds 60
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 6
 ```
 
@@ -340,7 +391,7 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 ## 마무리
 
-- **save-point** — 본 세션의 모든 변경은 `save-points/session-05/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 `cp -a save-points/session-06/start/. workshop/` 를 실행합니다
+- **save-point** — 본 세션의 모든 변경은 `save-points/session-05/complete/` 와 일치합니다. 다음 세션으로 넘어가려면 `workshop/` 을 그대로 두고 bash: `cp -a save-points/session-06/start/. workshop/` · PowerShell: `Copy-Item -Path save-points/session-06/start/* -Destination workshop -Recurse -Force` 를 실행합니다
 - **자원 정리** — App Configuration (Free) 과 Key Vault 는 비용이 사실상 0 이고 후속 세션 ([session-06](./06-observability.md)) 에서 계속 사용되므로 정리하지 않습니다
 - **다음 세션 미리보기** — [session-06](./06-observability.md) 에서는 지금까지 자동 계측이 잡아주던 trace 를 RAG 의 비즈니스 의미가 담긴 커스텀 span (`rag.retrieve`, `rag.generate`, `cache.lookup`, 토큰 카운트) 으로 격상시키고, KQL Workbook 과 Metric Alert 로 관측성을 구축합니다
 
