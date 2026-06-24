@@ -39,8 +39,8 @@ Copy-Item -Path save-points/session-00/start/* -Destination workshop -Recurse -F
 다음 명령을 한 줄씩 실행해 필요한 도구가 모두 설치되어 있는지 확인합니다. 하나가 실패해도 나머지 점검은 이어서 진행합니다.
 
 ```bash
-# Python
-python3 --version
+# uv — Python 은 uv 가 자동 관리하므로 uv 만 확인합니다
+uv --version
 ```
 
 ```bash
@@ -75,7 +75,7 @@ docker info >/dev/null && echo "Docker OK"
 
 > [!NOTE]
 > - 모두 [PREREQUISITES.md](../../PREREQUISITES.md) 의 최소 버전 이상이어야 합니다.
-> - macOS 기본 환경에는 `python` 명령이 없고 `python3` 만 있습니다. 위 점검도 `python3 --version` 을 사용합니다
+> - Python 은 직접 설치하지 않습니다 — 모든 Python 코드·스크립트는 `uv run` 으로 실행하고, `uv` 가 프로젝트의 `.python-version`(3.12) 을 읽어 Python 3.12 를 자동으로 받아 씁니다. 시스템에 Python 이 없거나 3.13/3.14 가 깔려 있어도 무방합니다
 > - 본 세션 (session-00) 에서는 Docker 를 사용하지 않으므로 `Docker OK` 가 출력되지 않아도 진행할 수 있습니다. 다만 컨테이너 이미지를 빌드하는 session-01 전까지는 Docker 를 실행해두어야 합니다
 
 ### 1.2 Azure 로그인 (개인 계정 사용)

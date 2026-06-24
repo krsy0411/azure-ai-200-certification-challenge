@@ -5,14 +5,13 @@
 > [!IMPORTANT]
 > 본 챌린지를 시작하기 전 다음 체크리스트를 **순서대로 모두 완료** 합니다. 가장 큰 리스크는 **Azure OpenAI 액세스 승인** 입니다 — 신청 후 승인까지 시간이 걸릴 수 있으므로 가장 먼저 신청하는 것을 권장합니다.
 
-본 체크리스트는 다음 6단계로 구성됩니다.
+본 체크리스트는 다음 5단계로 구성됩니다.
 
 1. [Azure 구독 준비](#1-azure-구독-준비)
 2. [Azure OpenAI 액세스 신청](#2-azure-openai-액세스-신청)
-3. [리전별 할당량 확인](#3-리전별-할당량-확인)
-4. [로컬 개발 도구 설치](#4-로컬-개발-도구-설치)
-5. [Git 및 GitHub 준비](#5-git-및-github-준비)
-6. [최종 검증](#6-최종-검증)
+3. [로컬 개발 도구 설치](#3-로컬-개발-도구-설치)
+4. [Git 및 GitHub 준비](#4-git-및-github-준비)
+5. [최종 검증](#5-최종-검증)
 
 ---
 
@@ -26,90 +25,54 @@
 > [!WARNING]
 > **회사 / 학교 구독 주의** — 조직 정책 (Conditional Access, 리전 제한, 비용 정책 등) 으로 막힐 수 있고, Azure OpenAI 액세스 신청도 별도 절차가 필요합니다. 가능하면 개인 구독 사용을 권장합니다.
 
-구독 확인 명령은 본 문서의 [6. 최종 검증](#6-최종-검증) 단계에서 한 번에 실행합니다.
-
 ---
 
 ## 2. Azure OpenAI 액세스 신청
 
-> [!CAUTION]
-> **본 항목이 가장 큰 리스크입니다.** 승인까지 시간이 걸릴 수 있으므로, 본 체크리스트 중 가장 먼저 신청해두는 것을 강력히 권장합니다.
-
 신청 링크 — [aka.ms/oaiapply](https://aka.ms/oaiapply)
 
-> [!TIP]
+> [!CAUTION]
+> 승인까지 시간이 걸릴 수 있으므로, 본 체크리스트 중 가장 먼저 신청해두는 것을 매우 권장합니다.
+>
 > 신청이 승인되기 전에는 Azure OpenAI 자원을 배포할 수 없으므로, 승인이 완료된 뒤에 본 챌린지의 첫 번째 세션 ([session-00](./docs/sessions/00-setup.md)) 을 진행합니다.
 
 ---
 
-## 3. 리전별 할당량 확인
-
-Azure 의 각 리전은 자원 종류별로 **사용 가능한 한도** (CPU 코어 수, 분당 토큰 수 등) 가 정해져 있습니다. 챌린지 기본 리전은 `koreacentral` (한국 중부) 이며, 다음 한도가 필요합니다.
-
-| 자원 | 필요한 한도 |
-|---|---|
-| Azure OpenAI `gpt-5-mini` | 분당 60K 토큰 |
-| Azure OpenAI `text-embedding-3-large` | 분당 50K 토큰 |
-| Azure Container Apps Consumption | 10 vCPU |
-| PostgreSQL Flexible (Burstable) | 1 vCPU |
-| Redis Enterprise | E10 |
-| Service Bus | Standard 등급 |
-| AKS (session-07): Standard_D2s_v3 노드 | 4 vCPU (DSv3 계열) |
-| Cosmos DB | 무제한 (serverless 사용) |
-
-한도 확인 명령은 다음과 같습니다.
-
-```bash
-# Azure OpenAI 사용량 확인 (Azure OpenAI 계정 배포 후 가능)
-az cognitiveservices usage list --location koreacentral -o table
-
-# 가상 머신 CPU 코어 한도 확인
-az vm list-usage --location koreacentral -o table | grep -E "DSv3|Standard_D"
-```
-
-> [!NOTE]
-> **`koreacentral` 미가용 모델 대응** — 일부 Azure OpenAI 모델이 `koreacentral` 에서 제공되지 않을 수 있습니다. 이 경우 Bicep 의 `aoaiLocation` 파라미터를 `eastus` 또는 `japaneast` 로 변경해 Azure OpenAI 자원만 다른 리전에 배포합니다 (각 세션 docs 에서 안내).
-
----
-
-## 4. 로컬 개발 도구 설치
+## 3. 로컬 개발 도구 설치
 
 본 챌린지는 학습자 본인 PC 에서 진행합니다 (Codespaces 사용하지 않음).
 
-### 4.1 도구 버전 요구사항
+### 3.1 도구 버전 요구사항
 
-| 도구 | 최소 버전 | 확인 명령 |
-|---|---|---|
-| Python | 3.12+ | `python3 --version` |
-| Node.js | 20+ | `node --version` |
-| Docker Desktop | 4.30+ | `docker info` |
-| Azure CLI | 2.65+ | `az --version` |
-| Bicep | 0.30+ | `az bicep version` |
-| Azure Functions Core Tools | 4.x | `func --version` |
-| kubectl (session-07 진행 시) | 1.30+ | `kubectl version --client` |
-| git | 2.40+ | `git --version` |
+각 도구의 **확인 명령** 으로 이미 설치되어 있는지·버전이 최소 요건을 만족하는지 점검하고, 없거나 버전이 낮으면 **설치** 열의 공식 설치 페이지를 열어 본인 OS(Windows / macOS / Linux) 에 맞는 안내를 따릅니다. 설치 후 PATH 갱신을 위해 **새 터미널** 을 엽니다.
+
+| 도구 | 버전 | 확인 명령 | 설치 |
+|---|---|---|---|
+| uv (Python 런타임·패키지 관리) | 최신 | `uv --version` | [uv 설치](https://docs.astral.sh/uv/getting-started/installation/) |
+| Node.js | 최신 **LTS** | `node --version` | [nodejs.org/en/download](https://nodejs.org/en/download) |
+| Docker Desktop | 4.30+ | `docker info` | [Docker Desktop 설치](https://docs.docker.com/get-started/get-docker/) |
+| Azure CLI | 2.65+ | `az --version` | [Azure CLI 설치](https://learn.microsoft.com/cli/azure/install-azure-cli) |
+| Bicep | 0.30+ | `az bicep version` | [Bicep 설치](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install) (Azure CLI 설치 후 `az bicep install`) |
+| Azure Functions Core Tools | 4.x | `func --version` | [Core Tools 설치](https://learn.microsoft.com/azure/azure-functions/functions-run-local) |
+| kubectl (session-07 진행 시) | 1.30+ | `kubectl version --client` | [kubectl 설치](https://kubernetes.io/docs/tasks/tools/) |
+| git | 2.40+ | `git --version` | [git-scm.com/downloads](https://git-scm.com/downloads) |
 
 > [!NOTE]
-> macOS·Linux 에는 `python3` 명령이 설치되어 있고, Windows 에서는 `python` (또는 `py`) 을 사용합니다. 본인 환경에 맞는 명령으로 버전을 확인합니다.
+> **Python 은 직접 설치하지 않습니다.** 본 챌린지의 Python 코드·스크립트는 항상 `uv run` 으로 실행하며, `uv` 가 프로젝트에 고정된 Python 버전(`.python-version` = 3.12) 을 읽어 필요한 Python 3.12 를 **자동으로 내려받아** 사용합니다. 따라서 시스템에 Python 이 없거나 3.13 / 3.14 가 깔려 있어도 무방합니다 — 설치할 도구는 `uv` 하나입니다.
+
+> [!NOTE]
+> **Node.js 는 "LTS" 버전을 받습니다.** 설치 페이지에 **LTS** 와 **Current** 두 갈래가 보이면 반드시 **LTS**(현재 가장 높은 LTS) 쪽을 받습니다. 버전 번호를 외울 필요 없이 LTS 표시만 따라가면 됩니다. Current(홀수 메이저) 버전은 빌드 호환성이 보장되지 않습니다.
 
 > [!TIP]
-> **설치 명령 예시 (Windows `winget`)** — macOS 는 `brew install`, Linux 는 배포판 패키지 매니저 사용. 설치 후 PATH 갱신을 위해 **새 터미널**을 엽니다.
+> **`func` (Functions Core Tools)**
 >
-> ```powershell
-> winget install Python.Python.3.12
-> winget install OpenJS.NodeJS.LTS
-> winget install Microsoft.AzureCLI
-> winget install Docker.DockerDesktop                  # 선택 (아래 참고)
-> winget install Microsoft.Azure.FunctionsCoreTools    # session-04 함수 배포에 필요
-> winget install Kubernetes.kubectl                    # session-07 진행 시
-> winget install Git.Git
-> az bicep install
-> ```
+> - 설치 페이지가 막히면 `npm i -g azure-functions-core-tools@4 --unsafe-perm true` 명령어를 터미널에 입력해 설치 가능합니다.
+> 
+> **Docker Desktop 은 선택**
 >
-> - **`func` (Functions Core Tools)** — `winget` 이 막히면 `npm i -g azure-functions-core-tools@4 --unsafe-perm true`. 정 안 되면 `az functionapp deployment source config-zip` 으로 우회 가능(문서 표준은 `func`).
-> - **Docker Desktop 은 선택** — 이미지 빌드를 `az acr build` 로 클라우드에서 수행하면 로컬 Docker 없이도 가능합니다 (`az acr build --registry <acr> --image api:tag apps/api`). ARM Mac 빌드 느림·`exec format error` 도 함께 회피됩니다. ([막혔을 때](#막혔을-때) 참고)
+> - 이미지 빌드를 `az acr build` 로 클라우드에서 수행하면 로컬 Docker 없이도 가능합니다 (`az acr build --registry <acr> --image api:tag apps/api`).
 
-### 4.2 Azure CLI 확장 설치
+### 3.2 Azure CLI 확장 설치
 
 본 챌린지 진행에 다음 확장이 필요합니다.
 
@@ -119,7 +82,7 @@ az extension add --name redisenterprise --upgrade
 az extension add --name appconfig --upgrade
 ```
 
-### 4.3 Docker 이미지 사전 다운로드 (권장)
+### 3.3 Docker 이미지 사전 다운로드 (권장)
 
 첫 빌드를 빠르게 진행하기 위해 미리 받아둡니다.
 
@@ -129,7 +92,7 @@ docker pull python:3.12-slim
 docker pull node:20-alpine
 ```
 
-### 4.4 VS Code 확장 (권장)
+### 3.4 VS Code 확장 (권장)
 
 - Bicep
 - Python
@@ -138,16 +101,16 @@ docker pull node:20-alpine
 
 ---
 
-## 5. Git 및 GitHub 준비
+## 4. Git 및 GitHub 준비
 
 본 챌린지는 GitHub 에 호스팅된 저장소를 클론해서 진행합니다.
 
-### 5.1 GitHub 계정
+### 4.1 GitHub 계정
 
 - [github.com](https://github.com) 에 가입되어 있어야 합니다
 - 본인의 GitHub username 을 알고 있어야 합니다
 
-### 5.2 Git 사용자 정보 설정
+### 4.2 Git 사용자 정보 설정
 
 처음 git 을 사용한다면 다음 한 번만 설정합니다.
 
@@ -159,41 +122,38 @@ git config --global user.email "본인 이메일"
 git config --global --list | grep -E "user\.(name|email)"
 ```
 
-### 5.3 GitHub 인증 방식 (둘 중 하나 선택)
+### 4.3 GitHub 인증 방식 : HTTPS + Personal Access Token (PAT)
 
-- **HTTPS + Personal Access Token (PAT)** — 가장 간단합니다. [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens) 에서 토큰 생성 후, `git push` 시 비밀번호 대신 토큰을 입력합니다
-- **SSH 키** — 한 번 설정하면 매번 인증할 필요가 없습니다. [GitHub 공식 가이드 — SSH 키 생성](https://docs.github.com/ko/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent) 참고
+[GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens) 에서 토큰 생성 후, `git push` 시 비밀번호 대신 토큰을 입력합니다.
 
-### 5.4 챌린지 저장소 클론
+지금 당장은 PAT를 사용하지 않으므로, 메모장에 PAT를 복사해두고 본 챌린지 진행 도중 필요할 때 사용합니다.
+
+### 4.4 챌린지 저장소 클론
+
+터미널(Terminal), PowerShell, Git Bash 등에서 아래 명령어를 실행해 챌린지 저장소를 클론합니다.
 
 ```bash
-git clone <챌린지-저장소-URL> azure-ai-200-challenge
+git clone https://github.com/krsy0411/azure-ai-200-certification-challenge.git azure-ai-200-challenge
 cd azure-ai-200-challenge
 ```
 
-> [!NOTE]
-> **세션 시작본은 git 브랜치 / 태그가 아닌 폴더 복사로 받습니다** — 본 챌린지는 `save-points/session-NN/{start,complete}/` 폴더에 각 세션의 시작본과 완성본을 동시 보관합니다. 첫 세션 ([session-00](./docs/sessions/00-setup.md)) 진행 시 `cp -a save-points/session-00/start/. workshop/` 명령으로 작업 폴더를 만들고, 그 위에서 학습합니다. 자세한 사용법은 [save-points/README.md](./save-points/README.md) 를 참고합니다.
-
-> [!TIP]
-> **본인 저장소로 Fork 후 진행하는 방법 (선택)** — 학습 진행 상황을 본인 GitHub 에 기록하고 싶다면, 챌린지 저장소를 본인 계정으로 Fork 한 뒤 그 Fork 를 클론합니다. 본인이 작성한 코드는 `workshop/` 폴더 안에 있으나 `.gitignore` 에 등록되어 있으므로, push 하고 싶다면 `git add -f workshop/`. 또는 별도 브랜치를 만들어 본인의 학습 결과물을 보관할 수 있습니다.
-
 ---
 
-## 6. 최종 검증
+## 5. 최종 검증
 
-위 1~5 단계가 모두 끝났다면 다음 명령으로 한 번에 점검합니다.
+위 1~4 단계가 모두 끝났다면 다음 명령으로 한 번에 점검합니다.
 
-### 6.1 도구 버전 일괄 점검
+### 5.1 도구 버전 일괄 점검
 
 다음 명령을 한 줄씩 실행해 필요한 도구가 모두 설치되어 있는지 확인합니다. 하나가 실패해도 나머지 점검은 이어서 진행합니다.
 
 ```bash
-# Python — Windows 는 python (또는 py)
-python3 --version
+# uv — Python 은 uv 가 자동 관리하므로 uv 만 확인합니다
+uv --version
 ```
 
 ```bash
-# Node.js
+# Node.js — 최신 LTS 인지 확인
 node --version
 ```
 
@@ -222,18 +182,24 @@ git --version
 docker info >/dev/null && echo "Docker OK"
 ```
 
-### 6.2 Azure 개인 계정으로 로그인 및 구독 선택
+### 5.2 Azure 개인 계정으로 로그인 및 구독 선택
 
 ```bash
 # 개인 계정으로 로그인 (브라우저가 열립니다)
 az login
+```
 
+```bash
 # 사용 가능한 구독 목록 확인
 az account list --output table
+```
 
+```bash
 # 본인 챌린지용 구독을 명시적으로 선택
-az account set --subscription "<본인-개인-구독-이름-또는-ID>"
+az account set --subscription "<Name 또는 SubscriptionId>"
+```
 
+```bash
 # 현재 활성 구독 + 본인 계정 확인
 az account show --query "{name:name, id:id, tenantId:tenantId, user:user.name}" -o jsonc
 ```
@@ -241,7 +207,7 @@ az account show --query "{name:name, id:id, tenantId:tenantId, user:user.name}" 
 > [!WARNING]
 > 출력의 `user` 가 본인의 개인 계정 (예: `@gmail.com`, `@outlook.com`, 또는 본인이 Azure 가입에 사용한 계정) 인지 반드시 확인합니다. 회사 / 학교 이메일로 로그인되어 있다면 `az logout` 후 다시 로그인합니다.
 
-### 6.3 비용 모니터링 알람 설정 (강력 권장)
+### 5.3 비용 모니터링 알람 설정 (강력 권장)
 
 챌린지 진행 중 누적 비용이 예상보다 커지지 않도록 예산 알람을 설정합니다.
 

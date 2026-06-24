@@ -443,8 +443,9 @@ az storage blob upload --account-name $STORAGE --container-name documents \
 #    az 에는 Cosmos 데이터플레인 쿼리 명령이 없으므로 SDK 로 조회합니다.
 sleep 30
 COSMOS=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].name" -o tsv)
-pip install -q azure-cosmos azure-identity   # 로컬에 없으면 1회만
-COSMOS_ENDPOINT="https://${COSMOS}.documents.azure.com:443/" python - <<'PY'
+# Python 런타임·의존성은 uv 가 즉석 환경으로 제공한다 (시스템 python·pip 불필요)
+COSMOS_ENDPOINT="https://${COSMOS}.documents.azure.com:443/" \
+uv run --no-project --python 3.12 --with azure-cosmos --with azure-identity python - <<'PY'
 import os
 from azure.cosmos import CosmosClient
 from azure.identity import AzureCliCredential
@@ -521,9 +522,10 @@ psql "host=$PG_HOST port=5432 dbname=appdb user=$UPN sslmode=require" \
 ```bash
 # 잘못된 메시지를 큐에 직접 송신 → on_ingest_message 가 KeyError → 5회 재시도 후 DLQ.
 # az servicebus 는 관리 플레인 전용(메시지 송신 명령 없음)이라 SDK 로 보낸다.
-pip install -q azure-servicebus azure-identity   # 로컬에 없으면 1회만
 SB=$(az servicebus namespace list -g rg-ai200ws-dev --query "[0].name" -o tsv)
-SB_FQDN="${SB}.servicebus.windows.net" python - <<'PY'
+# Python 런타임·의존성은 uv 가 즉석 환경으로 제공한다 (시스템 python·pip 불필요)
+SB_FQDN="${SB}.servicebus.windows.net" \
+uv run --no-project --python 3.12 --with azure-servicebus --with azure-identity python - <<'PY'
 import os
 from azure.servicebus import ServiceBusClient, ServiceBusMessage
 from azure.identity import AzureCliCredential
