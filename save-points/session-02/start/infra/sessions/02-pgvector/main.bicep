@@ -7,8 +7,8 @@
 //   MY_IP=$(curl -s ifconfig.me)
 //   az deployment group create \
 //     --resource-group rg-ai200ws-dev \
-//     --template-file workshop/infra/sessions/02-pgvector/main.bicep \
-//     --parameters workshop/infra/sessions/02-pgvector/main.bicepparam \
+//     --template-file infra/sessions/02-pgvector/main.bicep \
+//     --parameters infra/sessions/02-pgvector/main.bicepparam \
 //     --parameters userObjectId=$OID userPrincipalName=$UPN devClientIpAddress=$MY_IP
 //
 // 본 세션에서 할 일:

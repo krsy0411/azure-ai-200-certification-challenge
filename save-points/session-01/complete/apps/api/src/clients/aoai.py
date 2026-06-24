@@ -75,9 +75,6 @@ async def chat_with_context(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        # gpt-5 계열(reasoning 모델)은 temperature 커스텀과 max_tokens 를 지원하지 않는다.
-        # temperature 는 기본값(1)만 허용되므로 생략하고, 토큰 상한은 max_completion_tokens 로 준다.
-        # reasoning 토큰이 출력 토큰과 함께 차감되므로 여유 있게 둔다.
         max_completion_tokens=2048,
     )
     return response.choices[0].message.content or ""

@@ -4,7 +4,7 @@
 
 예정 모듈:
 
-- `redis-enterprise.bicep` — Memory_M10 클러스터
+- `redis-enterprise.bicep` — Balanced_B0 클러스터 (최소 등급)
 - `redis-enterprise-database.bicep` — RediSearch 모듈 포함, `evictionPolicy=NoEviction`
 - `redis-access-policy-assignment.bicep` — User Assigned Managed Identity 의 `principalId` 부여
 

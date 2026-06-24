@@ -34,7 +34,6 @@ def build_cosmos_client(settings: Settings) -> tuple[CosmosClient, DefaultAzureC
     Entra ID 토큰만 허용된다.
 
     호출자는 앱 종료 시 `credential.close()` 와 `client.close()` 를 책임진다.
-    `main.py` 의 lifespan 컨텍스트에서 처리한다.
     """
     credential = DefaultAzureCredential()
     client = CosmosClient(url=settings.cosmos_endpoint, credential=credential)
@@ -72,8 +71,7 @@ async def vector_search(
 
     sources: list[Source] = []
     # enable_cross_partition_query=True — 학습 단계에서는 partition 전수 스캔 허용.
-    # 운영 환경에서는 partition_key 를 명시해 RU 폭주를 막아야 한다
-    # (docs/pitfalls/common.md 참고).
+    # 운영 환경에서는 partition_key 를 명시해 RU 폭주를 막기 필요.
     async for item in container.query_items(
         query=sql,
         parameters=parameters,
@@ -82,9 +80,9 @@ async def vector_search(
             Source(
                 doc_id=item["doc_id"],
                 title=item.get("title"),
-                # VectorDistance 는 cosine distance (0 = 동일, 2 = 반대). 유사도 점수
-                # 로 보여주려면 1 - distance/2 같은 정규화를 적용해도 좋다. 본 워크샵은
-                # 학습 단순화를 위해 distance 자체를 score 로 보고 0~1 로 클램프한다.
+                # VectorDistance 는 cosine distance (0 = 동일, 2 = 반대).
+                # 유사도 점수로 보여주려면 1 - distance/2 같은 정규화를 적용해도 좋다.
+                # 본 챌린지는 학습 단순화를 위해 distance 자체를 score 로 보고 0~1 로 고정한다.
                 score=max(0.0, min(1.0, 1.0 - item["similarity"])),
             )
         )

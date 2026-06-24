@@ -5,8 +5,8 @@
 //   OID=$(az ad signed-in-user show --query id -o tsv)
 //   az deployment group create \
 //     --resource-group rg-ai200ws-dev \
-//     --template-file workshop/infra/sessions/03-redis-cache/main.bicep \
-//     --parameters workshop/infra/sessions/03-redis-cache/main.bicepparam \
+//     --template-file infra/sessions/03-redis-cache/main.bicep \
+//     --parameters infra/sessions/03-redis-cache/main.bicepparam \
 //     --parameters userObjectId=$OID
 //
 // 의존성:

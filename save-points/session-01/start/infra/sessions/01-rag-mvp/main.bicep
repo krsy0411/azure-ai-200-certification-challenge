@@ -4,8 +4,8 @@
 // 배포 명령:
 //   az deployment group create \
 //     --resource-group rg-ai200ws-dev \
-//     --template-file workshop/infra/sessions/01-rag-mvp/main.bicep \
-//     --parameters workshop/infra/sessions/01-rag-mvp/main.bicepparam \
+//     --template-file infra/sessions/01-rag-mvp/main.bicep \
+//     --parameters infra/sessions/01-rag-mvp/main.bicepparam \
 //     --parameters userObjectId=$(az ad signed-in-user show --query id -o tsv)
 //
 // 의존성:
@@ -36,11 +36,15 @@ param location string = resourceGroup().location
 @description('배포 실행자의 Entra objectId. 로컬 개발 시 Cosmos · Key Vault 접근용. 비우면 skip.')
 param userObjectId string = ''
 
+// -------- 컨테이너 이미지 태그 --------------------------------------------------
+
 @description('FastAPI 이미지 태그 (예: s01, latest)')
 param apiImageTag string = ''
 
 @description('Next.js 이미지 태그')
 param webImageTag string = ''
+
+// -------- Cosmos DB 파라미터 ----------------------------------------------------
 
 @description('Cosmos DB database 이름')
 param cosmosDatabaseName string = 'appdb'
@@ -63,10 +67,14 @@ var commonTags = {
 
 // -------- 자원 이름 ------------------------------------------------------------
 
+// ACR · Storage 는 글로벌 unique + 하이픈 금지. uniqueString 으로 충돌 회피.
 var acrName = take('acr${projectId}${env}${uniqueString(resourceGroup().id, projectId, env)}', 50)
+
 var caeName = 'cae-${projectId}-${env}'
 var caApiName = 'ca-api-${projectId}-${env}'
 var caWebName = 'ca-web-${projectId}-${env}'
+
+// Cosmos: 글로벌 unique.
 var cosmosName = take('cosmos-${projectId}-${env}-${uniqueString(resourceGroup().id, projectId, env)}', 44)
 
 // session-00 자원 이름 (session-00 의 main.bicep 과 동일 규칙)
@@ -98,6 +106,8 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: aiName
 }
 
+// Log Analytics shared key 는 listKeys 호출로 가져옴 (Container Apps Env 가 요구).
+// @secure() 출력 없이 직접 listKeys 사용 — Bicep 의 표준 패턴.
 var logAnalyticsSharedKey = law.listKeys().primarySharedKey
 
 // -------- 1) Azure Container Registry 모듈 호출하기 ---------------------------

@@ -5,12 +5,13 @@
 - `POST /api/chat` — 사용자 질문 → 답변 + 출처
 
 부팅 시점에 `azure-monitor-opentelemetry` 자동 계측을 활성화한다:
-- 인입 HTTP (FastAPI), 외부 HTTP (Azure OpenAI · Cosmos), 가 trace 로 기록됨
+- 인입 HTTP (FastAPI), 외부 HTTP (Azure OpenAI · Cosmos) 가 trace 로 기록됨
 - session-06 에서 비즈니스 의미가 담긴 커스텀 span 이 추가된다.
 
 자동 계측은 FastAPI app 인스턴스가 만들어지기 전에 켜야 한다. configure_azure_monitor 가
 app 생성 후(lifespan)에 호출되면, FastAPI 자동 계측이 이미 만들어진 app 에 적용되지 않아
-요청 span 이 기록되지 않는다. 따라서 import 최상단에서 계측을 활성화한다.
+요청 span 이 기록되지 않는다. 따라서 아래 계측 블록은 import 최상단에 두며 완성되어 제공된다.
+학습자는 lifespan 의 클라이언트 초기화와 /api/chat 본문을 채운다.
 """
 
 import os

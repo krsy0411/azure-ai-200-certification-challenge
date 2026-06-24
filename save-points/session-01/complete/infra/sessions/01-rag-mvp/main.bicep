@@ -172,8 +172,8 @@ module cosmosChunksContainer '../../modules/session-01/cosmos-sql-container.bice
 }
 
 // -------- 4) Key Vault Secret — Azure OpenAI endpoint URL ----------------------
-//             값 자체는 시크릿이 아니지만 (URL), 워크샵에서 KV reference 패턴을 학습하기 위해
-//             Key Vault 에 저장하고 코드에서 SDK 로 읽어오는 흐름을 보여준다.
+//             endpoint URL 자체는 시크릿이 아니지만, Key Vault 에 저장하고 코드에서
+//             SDK 로 읽어오는 Key Vault reference 패턴을 학습하기 위해 한 개를 저장한다.
 
 module aoaiEndpointSecret '../../modules/session-01/key-vault-secret.bicep' = {
   name: 'aoaiEndpointSecret'
@@ -321,9 +321,10 @@ module caWeb '../../modules/session-01/container-app.bicep' = {
     ]
     tags: commonTags
   }
+  // caWeb 는 envVars 에서 caApi.outputs.fqdn 을 참조하므로 caApi 의존은 자동으로 잡힌다.
+  // ACR pull 권한만 명시적으로 먼저 끝나도록 dependsOn 에 둔다.
   dependsOn: [
     acrPullRoleUami
-    caApi
   ]
 }
 
