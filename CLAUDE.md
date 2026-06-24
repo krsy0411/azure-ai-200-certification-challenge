@@ -22,9 +22,9 @@
 5. **배포 방식 — Bicep IaC 우선.** session 00~07 의 모든 리소스 프로비저닝·구성은 **Bicep 모듈**로 선언하고, 각 session 은 단일 엔트리 `infra/sessions/0N-*/main.bicep` 에서 모듈을 조립해 `az deployment group create` / `az deployment sub create` 로 배포한다. Portal GUI 는 스크린샷·교육 산출물이 아니라 **결과 확인용**으로만 사용한다. **예외 — 컨테이너 이미지 빌드·ACR 푸시**: IaC 로 선언할 수 없는 작업이므로 `docker build --platform linux/amd64` + `docker push` + `az acr login` CLI 를 각 session 문서의 "이미지 빌드·푸시" 하위에서 사용. **(향후) CI 세션**은 각 session 의 `main.bicep` 을 `infra/main.bicep` 에 상위 조립하고 GitHub Actions CI 로 자동화하는 **축소된 범위**다.
 6. **실제 배포 실행은 사용자가 수행.** Claude 는 Bicep 모듈·파라미터·배포 명령어를 준비하고, 사용자가 `az deployment ... what-if` 로 검토 후 실제 배포를 실행한다. 문서의 "함정·교훈" 섹션은 배포 후 사용자/Claude 가 같이 채운다.
 7. **자원 라이프사이클 — session 단위 정리 + 무료/사실상-무료 자원만 보존.** 비용 통제와 학습 격리를 위해 session 마다 자원이 살았다 정리되는 사이클을 갖는다.
-   - **비용 현실 (session-04 실측, 7일 108,569 KRW, docs/sessions/04-async-ingestion.md 함정 8)**: dev 환경이라도 idle 자원이 **시간당** 누적된다. Redis Enterprise Memory_M10 = ~11,680 KRW/일, ACA Container App (min replica 1) = ~1,743 KRW/일, AKS LB+IP = ~1,125 KRW/일, PG B1ms = ~700 KRW/일. **compute 가 있는 자원은 idle 만으로도 빠르게 누적**.
+   - **비용 현실 (이전 학습 단계 실측, 7일 108,569 KRW, docs/pitfalls/common.md "비용·운영")**: dev 환경이라도 idle 자원이 **시간당** 누적된다. 당시 Redis = **Memory_M10** = ~11,680 KRW/일 (청구의 75%), ACA Container App (min replica 1) = ~1,743 KRW/일, AKS LB+IP = ~1,125 KRW/일, PG B1ms = ~700 KRW/일. **compute 가 있는 자원은 idle 만으로도 빠르게 누적**. — 단, **현재 챌린지의 Redis 는 최소 등급 `Balanced_B0`** (list price ~$13/월) 로 배포하므로 위 Memory_M10 수치보다 훨씬 낮다 (Balanced_B0 에서는 Redis 가 더 이상 비용 1위가 아님).
    - **검증 보존**: session 검증·측정이 끝났더라도 Claude 는 자원을 자동 삭제하지 않는다. 사용자가 Portal·브라우저·외부 도구로 추가 검증을 할 수 있으므로, **"정리해" / "삭제해" / "drop" 등 명시 요청 전까지** 모든 Azure 자원과 임시 권한 (예: AAD admin 부여, ACA ingress external 토글) 을 그대로 둔다.
-   - **session 종료 시 정리 + 다음 session 진입 시 재배포**: 사용자 명시 요청을 받으면 해당 session 의 **모든 compute/유료 자원** 을 정리한다. 다음 session 의 `main.bicep` 이 그 자원을 `existing` 참조한다면 다음 session 진입 직전에 해당 session 의 `main.bicep` 을 한 번 다시 돌려 재배포한다 (이전 session 의 데이터 자원을 다음 session 이 `existing` 참조하는 패턴). 같은 이름의 자원이 soft-delete 충돌하면 접미사를 한 단계 올린다 (`dev04` → `dev06`).
+   - **session 종료 시 정리 + 다음 session 진입 시 재배포**: 사용자 명시 요청을 받으면 해당 session 의 **모든 compute/유료 자원** 을 정리한다. 다음 session 의 `main.bicep` 이 그 자원을 `existing` 참조한다면 다음 session 진입 직전에 해당 session 의 `main.bicep` 을 한 번 다시 돌려 재배포한다 (이전 session 의 데이터 자원을 다음 session 이 `existing` 참조하는 패턴). 같은 이름의 자원이 soft-delete 충돌하면 접미사를 한 단계 올린다 (`dev04` → `dev06`). 단 **Key Vault 는 접미사 bump 가 통하지 않는다** — 이름 시드 (`uniqueString(subscription().id, projectId, env)`) 가 고정이고 `enablePurgeProtection: true` 라 한 번 삭제하면 7일간 purge·재생성 모두 불가하다. KV 는 정리하지 말고 그대로 보존한다 (아래 보존 목록 참고).
    - **보존 / 정리 분류 (session-04 실측 기반, 2026-05-18 룰 갱신)**:
      - **보존 (무료 또는 사실상-무료)**:
        - **ACR Basic** (`acr...`) — storage 만 ~260 KRW/일, 이미지가 학습 자산
@@ -32,7 +32,7 @@
        - **공용 UAMI** (`id-...-aca-...`, `id-...-aks-...`) — 무료
        - **ACA Environment** (`cae-...`) — Container App 이 살아있을 때만 과금. 자체는 무료
        - **Application Insights** (`ai-...`) — workspace-based 라 LAW 와 같이 ingest 만
-       - **Key Vault / App Configuration** (Key Vault 는 session-00·01, App Configuration 은 session-05) — sub-원 단위 비용
+       - **Key Vault / App Configuration** (Key Vault 는 session-00·01, App Configuration 은 session-05) — sub-원 단위 비용. **특히 Key Vault 는 전체 teardown 에서도 절대 삭제하지 않는다** — purge protection (`enablePurgeProtection: true`) + 고정 시드 이름이라 한 번 지우면 7일간 purge·같은 이름 재배포가 모두 막힌다 (Microsoft 도 override 불가, 모듈에 `createMode: 'recover'` 없음). 전체 정리 시에도 KV 만 남기고 나머지를 지운다. App Configuration 은 purge protection 이 없어 `az appconfig purge` 로 즉시 이름 회수 가능. 상세: `docs/pitfalls/common.md` "Soft-delete 7일 이름 충돌"
      - **정리 (compute 또는 유의미한 idle 비용)**:
        - **Cosmos DB / Azure OpenAI / PostgreSQL / Managed Redis** — session 01·02·03 데이터 자원 (Azure OpenAI 는 session-00 기반 자원)
        - **Service Bus / Event Grid / Function App / Storage** — session-04 신규

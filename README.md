@@ -5,7 +5,7 @@
 
 ## 사전 준비
 
-챌린지 시작 전 [PREREQUISITES.md](./PREREQUISITES.md) 의 체크리스트를 순서대로 모두 완료합니다. 특히 Azure OpenAI 액세스 신청은 승인까지 시간이 걸릴 수 있으므로 가장 먼저 신청해두는 것을 권장합니다.
+챌린지 시작 전 [PREREQUISITES.md](./PREREQUISITES.md) 의 체크리스트를 순서대로 모두 완료합니다. (본 챌린지가 사용하는 Azure OpenAI 표준 모델은 별도의 액세스 신청이 필요 없습니다.)
 
 ---
 

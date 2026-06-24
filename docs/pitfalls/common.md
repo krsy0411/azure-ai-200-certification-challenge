@@ -105,17 +105,11 @@
     --parameters aoaiLocation=eastus
   ```
 
-### Azure OpenAI 액세스 미승인 구독에서 배포 불가 (session-00)
-
-- 증상 — Azure OpenAI 자원 배포가 액세스 권한 부재로 거부됨
-- 원인 — Azure OpenAI 자원은 액세스 승인 ([aka.ms/oaiapply](https://aka.ms/oaiapply)) 이 완료된 구독에서만 배포 가능
-- 회피 — 승인까지 시간이 걸릴 수 있으므로 [PREREQUISITES.md](../../PREREQUISITES.md) 의 Azure OpenAI 액세스 신청 단계를 가장 먼저 진행
-
 ### 모델 deprecation — 신규 deployment 생성 차단 (session-00)
 
-- 증상 — `az deployment sub what-if` preflight 에서 `ServiceModelDeprecated` 오류. 실측 사례 — `gpt-4o-mini` (version `2024-07-18`) 가 2026-03-31 부로 신규 deployment 생성 차단 (기존 deployment 의 추론은 2026-10-01 까지 동작하지만 새로 만들 수 없음)
-- 원인 — Azure OpenAI 모델은 버전별 수명 주기 (deprecation 일정) 가 있어, 신규 deployment 생성 차단일이 지나면 같은 Bicep 이라도 재배포가 실패함
-- 회피 — 현재 배포 가능한 모델을 확인하고 후속 모델로 교체. 본 챌린지는 `gpt-5-mini` (version `2025-08-07`) 로 교체함
+- 증상 — `az deployment sub what-if` preflight 에서 `ServiceModelDeprecated` 오류. deprecation 일정이 지난 모델·버전을 deployment 로 참조하면 발생 (기존 deployment 의 추론은 retirement 일까지 동작하지만 신규 생성은 차단)
+- 원인 — Azure OpenAI 모델은 버전별 수명 주기 (deprecation → retirement 일정) 가 있어, 신규 deployment 생성 차단일이 지나면 같은 Bicep 이라도 재배포가 실패함. 모델별 일정은 공식 [model retirement schedule](https://learn.microsoft.com/azure/ai-foundry/openai/concepts/model-retirement-schedule) 에서 확인
+- 회피 — 배포 전 아래 명령으로 현재 배포 가능한 모델·버전을 확인하고, 차단된 모델은 후속 버전으로 교체. 본 챌린지는 `gpt-4o-mini` (version `2024-07-18`) 와 `gpt-5-mini` (version `2025-08-07`) 를 사용
 
   ```bash
   az cognitiveservices model list -l koreacentral \
@@ -153,11 +147,14 @@
   var acrName = 'acrai200ws${env}${uniqueString(resourceGroup().id)}'
   ```
 
-### Soft-delete 7일 이름 충돌 (Key Vault / App Configuration) (session-05)
+### Soft-delete 7일 이름 충돌 — Key Vault 는 purge protection 때문에 purge 도 불가 (session-00·session-05)
 
-- 증상 — 자원 정리 후 재배포 시 `name already taken`
-- 원인 — Key Vault / App Configuration 은 soft-delete 후 7일 동안 같은 이름 재생성 불가
-- 회피 — dev 환경도 `purgeProtectionEnabled: true` 설정 + 정리 시 `--purge` 옵션 사용 (Key Vault) 또는 접미사를 한 단계 올림
+- 증상 — 자원을 정리 (RG 삭제 등) 한 뒤 같은 이름으로 재배포하면 `VaultAlreadyExists` / `name already taken`. 특히 Key Vault 는 정리 직후 7일간 어떤 방법으로도 재생성·purge 가 안 됨
+- 원인 — Key Vault · App Configuration 은 soft-delete 후 보존 기간 동안 이름이 전역 예약됨. 본 챌린지 Key Vault 는 `enablePurgeProtection: true` 이고 이름이 `uniqueString(subscription().id, projectId, env)` (고정 시드) 라, ① 재배포해도 항상 같은 이름이 나오고 ② purge protection 때문에 보존 기간 (7일) 이 지나기 전엔 누구도 (Microsoft 포함) purge 불가. KV 모듈에 `createMode: 'recover'` 가 없어 같은 이름 재배포는 실패한다. **즉 purge protection 은 이 충돌을 "회피" 하는 게 아니라 오히려 강제한다** — purge 로 즉시 이름을 비울 수 없게 만들기 때문 (이전 문서의 "purge protection 켜두면 충돌 회피" 설명은 사실과 반대였다)
+- 회피 —
+  - **Key Vault 는 정리 대상에서 제외하고 그대로 보존** — 비용이 사실상 0 이고 후속 세션·재배포가 그대로 재사용한다. `/phase-cleanup` 도 KV 를 보존하며, 전체 teardown 시에도 KV 만 남기고 나머지를 지운다 ([CLAUDE.md](../../CLAUDE.md) §7)
+  - 실수로 KV 를 지웠다면 — `az keyvault recover -n <name> -l <region>` 로 복구하거나 (soft-delete 시 RBAC 역할 할당은 사라지므로 재배포로 재부여 필요), 7일 경과 후 자동 purge 를 기다린 뒤 재배포
+  - App Configuration 은 purge protection 이 없어 `az appconfig purge -n <name> -y` 로 즉시 이름 회수 가능. 데이터 자원 (Cosmos · PostgreSQL 등) 의 soft-delete 충돌은 접미사를 한 단계 올려 회피 (`dev04` → `dev06`)
 
 ### Cosmos serverless 는 capability 가 아니라 `capacityMode` 속성 (session-01)
 
@@ -352,11 +349,11 @@
 
 ## 비동기 · 메시징
 
-### Cosmos change feed lease container silent fail (session-04)
+### Cosmos change feed lease container 자동 생성 차단 (session-04)
 
-- 증상 — Azure Functions 가 정상으로 보이고 에러도 0건이지만, trigger 가 fire 하지 않음
-- 원인 — lease container 자동 생성이 control plane RBAC 부재로 silent 실패
-- 회피 — **Bicep 으로 lease container 를 사전 생성** 필수
+- 증상 — trigger 가 fire 하지 않음. `create_lease_container_if_not_exists=True` 로 두면 함수가 start 하지 못하고 `403 Forbidden` (Substatus 5300)
+- 원인 — Entra ID (관리 ID) 인증에서 lease container 생성은 data plane 이 아니라 control plane (비-데이터) 작업이라 차단됨. lease container 가 없으면 자동 생성이 거부되어 trigger 가 동작하지 못함
+- 회피 — **Bicep 으로 lease container 를 사전 생성** 하고, trigger 는 `create_lease_container_if_not_exists=False` 로 둔다 (본 챌린지 구성)
 
   ```bicep
   resource leases 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-08-15' = {
@@ -512,11 +509,11 @@
 ### idle 자원의 누적 비용 (전체)
 
 - 측정 (이전 학습 단계에서 dev 환경 7일 기준)
-  - Redis Enterprise Memory_M10: **~₩11,680/일** (전체 청구의 75%)
+  - Redis (당시 **Memory_M10**): **~₩11,680/일** (당시 전체 청구의 75%) — **현재 챌린지는 최소 등급 `Balanced_B0` 로 배포**하므로 이보다 훨씬 낮음 (list price 기준 약 1/18, [Azure Managed Redis 요금](https://azure.microsoft.com/pricing/details/managed-redis/))
   - Azure Container Apps Container App (min replica 1): ~₩1,743/일
   - Azure Kubernetes Service LB + Public IP: ~₩1,125/일
   - PostgreSQL B1ms: ~₩700/일
-- 함의 — dev 환경이라도 compute 가 있는 자원은 시간당 누적
+- 함의 — dev 환경이라도 compute 가 있는 자원은 시간당 누적. (위 Redis ~₩11,680/일 은 당시 Memory_M10 기준 — **SKU 가 크면 빠르게 누적**된다는 예시이며, 현재 `Balanced_B0` 의 비용 서열은 이보다 훨씬 아래)
 - 회피 — 본 챌린지 진행이 끝나면 즉시 [cleanup.md](../cleanup.md) 수행
 
 ### 컨테이너 이미지는 Resource Group 삭제 후에도 남음
@@ -553,7 +550,7 @@
 - **Windows + psycopg async** — Windows 기본 ProactorEventLoop 에서 `asyncio.run()` 으로 psycopg async 를 돌리면 `Psycopg cannot use the 'ProactorEventLoop'` 로 죽는다. `asyncio.run(main(), loop_factory=asyncio.SelectorEventLoop)` (Python 3.12+) 로 SelectorEventLoop 강제. `seed_both.py` 같은 로컬 스크립트에서 발생 (session-02)
 - **PostgreSQL `SET LOCAL x = %s`** 는 bind 파라미터를 받지 않아 `syntax error at or near "$1"`. 신뢰된 정수는 직접 보간(`f"SET LOCAL hnsw.ef_search = {int(v)}"`)하거나 `SELECT set_config('x', %s, true)` 사용 (session-02)
 - **FastAPI OpenTelemetry 계측은 app 생성 직후(모듈 레벨)에 해야 한다** — `configure_azure_monitor()` 를 lifespan startup 에서 호출하면 `FastAPI.__init__` 패치가 **이미 생성된** app 에 적용 안 돼 **인입 요청 server span(`requests` 테이블)이 통째로 누락**된다. 커스텀 span(`dependencies`)·metric·log 는 잡히는데 `requests` 만 빠져 증상이 헷갈림. 영향: session-06 의 `requests` 기반 알림(오류율·p95)·Workbook P95 에 데이터가 안 들어옴. 해결: `app = FastAPI(...)` **직후 모듈 레벨**에서 `configure_azure_monitor(...)` + `FastAPIInstrumentor.instrument_app(app)` 호출 (session-06)
-- **`azure-appconfiguration-provider` 의 `load()` kwarg 는 `feature_flag_enabled`(단수)** — `feature_flags_enabled`(복수) 오타를 넘기면 `load()` 가 `**kwargs` 라 에러 없이 무시하고 **피처 플래그를 아예 로드하지 않는다**. 결과적으로 `is_enabled()` 가 항상 false (플래그·캐시 토글이 통째로 죽음). 증상이 조용해서 진단이 어려움 (session-05)
+- **`azure-appconfiguration-provider` 의 `load()` 피처 플래그 활성화 kwarg 이름은 공식 문서마다 다르다** — SDK README(client library)는 단수 `feature_flag_enabled`, MS Learn 개념 문서는 복수 `feature_flags_enabled` 로 표기한다. `load()` 가 `**kwargs` 라 **틀린 이름을 넘기면 에러 없이 무시되고 피처 플래그를 아예 로드하지 않아** `is_enabled()` 가 항상 false 가 된다 (플래그·캐시 토글이 통째로 죽음, 증상이 조용해 진단이 어려움). 본 챌린지가 쓰는 `azure-appconfiguration-provider>=2.0.0` 는 **단수 `feature_flag_enabled`** 가 정답 (SDK README 기준이며 `loader.py` 도 단수 사용). 직접 손볼 때는 설치된 버전의 README 로 이름을 재확인 (session-05)
 - **App Configuration `feature_flag_refresh_enabled=True` 누락 시 토글 미반영** — refresh 설정이 빠지면 포털에서 피처 플래그를 토글해도 앱에 반영되지 않는다. 가장 흔한 함정 (session-05)
 - **`is_enabled()` 는 호출마다 평가** — hot path 에서 과도하게 호출하지 않도록 요청 시작 시 1회 평가 후 결과를 재사용 (session-05)
 - **`identity.type='UserAssigned'` 자원은 `identity.principalId` 를 노출하지 않음** — 최상위 `identity.principalId` 대신 `userAssignedIdentities[id].principalId` 로 접근 (session-04)

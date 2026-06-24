@@ -38,7 +38,7 @@ CLAUDE.md §7 의 **보존 / 정리 분류** 적용 (2026-05-18 룰 갱신 — s
 - **Cosmos DB** (`cosmos-...`)
 - **Azure OpenAI** (`aoai-...`) → soft-delete 후 `purge` 까지 (같은 이름 재배포 위해)
 - **PostgreSQL Flexible Server** (`pg-...`) — Burstable 도 ~700 KRW/일
-- **Managed Redis** (`redis-...`) — **Memory_M10 = ~11,680 KRW/일 (dominant)**
+- **Managed Redis** (`redis-...`) — 현재 SKU `Balanced_B0` (list price ~$13/월). compute idle 비용 발생 (과거 Memory_M10 측정 시 ~11,680 KRW/일 이었으나 SKU 변경으로 대폭 하락)
 - **Service Bus** (`sb-...`)
 - **Event Grid 토픽** (`egt-...`)
 - **Function App** (`func-...`) + Flex Consumption plan (`asp-func-...`)

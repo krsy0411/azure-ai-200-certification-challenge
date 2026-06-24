@@ -179,7 +179,7 @@ flowchart LR
 ```
 
 > [!WARNING]
-> **lease container 자동 생성 silent fail** — Cosmos change feed trigger 는 lease container 가 없으면 자동 생성을 시도하지만, control plane RBAC 부재 시 silent 실패합니다. 본 챌린지의 Bicep 은 lease container 를 사전 생성합니다 ([docs/pitfalls/common.md](./pitfalls/common.md#cosmos-change-feed-lease-container-silent-fail-session-04) 참고).
+> **lease container 자동 생성 차단** — Cosmos change feed trigger 를 `create_lease_container_if_not_exists=True` 로 두면, Entra ID(관리 ID) 인증에서는 lease container 생성이 control plane 작업이라 차단되어 함수가 시작하지 못합니다 (`403 Forbidden`). 본 챌린지의 Bicep 은 lease container 를 사전 생성하고 trigger 는 `False` 로 둡니다 ([docs/pitfalls/common.md](./pitfalls/common.md#cosmos-change-feed-lease-container-자동-생성-차단-session-04) 참고).
 
 ---
 
