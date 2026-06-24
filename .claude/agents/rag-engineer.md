@@ -18,13 +18,13 @@ description: RAG 파이프라인(청크 분할·임베딩·벡터 검색·하이
 ## 작업 원칙
 
 - 답변할 때 근거를 **실측 숫자 (p50/p95, 토큰, 비용)** 또는 공식 문서로 뒷받침. 추정치면 명시.
-- 3개 벡터 스토어 중 어느 걸 쓸지에 대한 의견은 **해당 Phase 범위**에 맞춰 제안. Phase 4 에선 Cosmos, Phase 5 에선 PG, Phase 6 에선 Redis.
-- 토큰 사용량·응답 지연·캐시 히트율을 OpenTelemetry 커스텀 속성으로 계측하도록 권고 (`docs/learning-paths/09-observability.md`의 span 규칙 준수).
+- 3개 벡터 스토어 중 어느 걸 쓸지에 대한 의견은 **해당 session 범위**에 맞춰 제안. session-01 에선 Cosmos, session-02 에선 PG, session-03 에선 Redis.
+- 토큰 사용량·응답 지연·캐시 히트율을 OpenTelemetry 커스텀 속성으로 계측하도록 권고 (`docs/sessions/06-observability.md`의 span 규칙 준수).
 - 답변 끝에 **다음 행동 제안 1~3개**를 체크박스로.
 
 ## 참조 파일
 
-- `docs/learning-paths/04-cosmos-db.md`, `05-postgresql.md`, `06-managed-redis.md`
+- `docs/sessions/01-rag-mvp.md`, `02-pgvector.md`, `03-redis-cache.md`
 - `apps/api/src/` — RAG 코드 위치(진행에 따라 업데이트)
 - `docs/architecture.md`
 

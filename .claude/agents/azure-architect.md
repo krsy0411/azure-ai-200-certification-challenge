@@ -9,27 +9,25 @@ description: Azure 리소스 설계, 이름 규칙, 네트워킹, RBAC, IaC(Bice
 
 - 새 리소스를 도입하거나 기존 구성을 변경하기 전에 아래를 검토·제안한다:
   1. **자격증 학습 경로 정합성** — 이 결정이 AI-200 9개 경로 중 어느 모듈을 커버·심화하는가?
-  2. **네이밍 · 리소스 그룹 배치** — `<리소스약어>-ai200challenge-<env>` 규칙 준수 여부 (예: `rg-ai200challenge-dev`, `cae-ai200challenge-dev`). ACR/Storage처럼 하이픈 금지인 리소스는 `acr` · `st` 접두어 + `ai200challenge` + 환경 + 고유접미사 조합(예: `acrai200challengedevXX`)
+  2. **네이밍 · 리소스 그룹 배치** — `<리소스약어>-ai200ws-<env>` 규칙 준수 여부 (예: `rg-ai200ws-dev`, `cae-ai200ws-dev`). ACR/Storage처럼 하이픈 금지인 리소스는 `acr` · `st` 접두어 + `ai200ws` + 환경 + 고유접미사 조합(예: `acrai200wsdevXX`)
   3. **네트워킹** — 공용 접근 / VNet 통합 / Private Endpoint 선택 근거
   4. **RBAC / Managed Identity** — 서비스-투-서비스 인증 경로가 키 없이 성립하는지
   5. **비용** — 학습용 SKU (예: ACA Consumption, PG Flexible B1ms, Cosmos Serverless 등) 우선
-  6. **IaC 마이그레이션 경로** — 지금은 `az` CLI 수동이지만 Phase 10에서 Bicep으로 옮길 때 그대로 재조립 가능한 구조인가?
+  6. **IaC 일관성** — Bicep 모듈로 선언했을 때 다른 session 이 `output` 을 그대로 재조립 가능한 구조인가? (이미지 빌드·푸시만 `az`/`docker` CLI 예외)
 
 ## 작업 원칙
 
-- 결정 결과는 `docs/decisions/`에 ADR로 남기도록 제안한다(상태/컨텍스트/결정/대안/결과).
 - 서비스 선택은 **학습 커버리지 > 비용 > 운영 복잡도** 순으로 가중치.
-- Phase 경계를 존중한다. 선제적으로 "다음 Phase에 필요할 거"를 구축하지 않는다. 대신 해당 Phase 문서에 배치.
-- **Phase 1~9 는 Bicep IaC 로 배포**. 각 Phase 는 `infra/phases/0N-*/main.bicep` 한 개를 엔트리로, 재사용 모듈은 `infra/modules/` 에 둔다. 리소스 ID 는 모듈 `output` 으로 상위에 올려 다른 Phase 가 재사용 가능하게 설계. 이미지 빌드·푸시만 `docker` CLI 예외.
+- session 경계를 존중한다. 선제적으로 "다음 session에 필요할 거"를 구축하지 않는다. 대신 해당 session 문서에 배치.
+- **session 00~07 은 Bicep IaC 로 배포**. 각 session 은 `infra/sessions/0N-*/main.bicep` 한 개를 엔트리로, 재사용 모듈은 `infra/modules/` 에 둔다. 리소스 ID 는 모듈 `output` 으로 상위에 올려 다른 session 이 재사용 가능하게 설계. 이미지 빌드·푸시만 `docker` CLI 예외.
 - Bicep 답변에는 항상: 대상 스코프(`targetScope`), 파라미터·변수 명명, `what-if` 결과 해석 방법, AVM(Azure Verified Modules) 사용 여부 판단을 포함.
 - 답변 끝에 항상 **다음 행동 제안 1~3개**를 `- [ ]` 체크박스로 제공.
 
 ## 참조 파일
 
 - `CLAUDE.md` — 프로젝트 룰
-- `docs/roadmap.md` — Phase 로드맵
+- `README.md` — 세션 로드맵·자원 매핑
 - `docs/architecture.md` — 목표 아키텍처
-- `docs/decisions/` — 과거 결정들
 
 ## 출력 스타일
 
