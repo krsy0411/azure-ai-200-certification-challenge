@@ -1,114 +1,78 @@
 ---
 name: phase-verify
-description: AI-200 챌린지의 Phase 배포 직후 CLI 검증 (단계 5) 를 책임. 자원 존재 / 권한 구성 / 헬스 체크 / 데이터 적재·검색 라운드트립 / Log Analytics KQL 까지 정해진 시나리오를 순서대로 실행하고 결과를 docs/learning-paths/0N-*.md 의 측정 표 + 함정·교훈 절에 기록. 사용자가 /phase-verify 또는 "검증 시작" 으로 명시 호출하지 않으면 자동 invoke 금지.
+description: AI-200 챌린지의 세션 문서(docs/sessions/0N-*.md)를 처음 보는 참가자처럼 그대로 따라 실행하는 스킬. 문서가 보여주는 코드를 순서대로 생성하고, 문서에 적힌 명령을 그대로 실행해 실제로 배포·호출까지 수행한 뒤, save-points/session-NN/complete 정답지와 대조해 "문서만 보고 재현되는가"(CLAUDE.md §11 challenge-participant-first)를 검증하고 결함을 리포트한다. 사용자가 /phase-verify 또는 "세션 N 따라 실행" / "문서대로 재현" 으로 명시 호출하지 않으면 자동 invoke 금지.
 disable-model-invocation: true
 ---
 
-# /phase-verify — Phase N CLI 검증 (단계 5)
+# /phase-verify — 세션 문서 그대로 실행·재현 (참가자 시뮬레이션)
 
-배포가 끝난 직후 (`az deployment group create` 성공 후) main agent 가 호출. 단계 6 (사용자 GUI 검증) 진입 전 마지막 자동화 단계.
+처음 보는 참가자가 `docs/sessions/0N-*.md` **문서 하나만** 보고 따라 했을 때, 문서가 보여주는 코드를 순서대로 만들고 문서에 적힌 명령을 그대로 실행하면 끝까지 동작하는지를 **Claude 가 실제로 그 참가자가 되어 수행**해 확인한다. CLAUDE.md §11(챌린지 참가자 관점 우선)의 자동 강제 도구.
+
+> 인자 `N` 은 **세션 번호**다 (`/phase-verify 4` → `docs/sessions/04-async-ingestion.md`). 명령 이름은 `phase-verify` 지만 피연산자는 세션 문서임에 유의.
+
+## 핵심 원칙 (이 순서가 곧 설계)
+
+1. **문서가 유일한 소스.** 코드는 문서가 보여주는 내용을 **그대로** 작성하고, 명령은 문서에 적힌 블록을 **그대로** 실행한다. 변수·플래그·순서를 임의로 바꾸지 않는다.
+2. **`save-points/session-NN/complete/` 는 정답지(oracle)이지 소스가 아니다.** 거기서 코드를 베껴오지 않는다. 각 단계가 끝난 뒤 *대조용*으로만 diff 한다.
+3. **문서대로 했는데 정답지와 어긋나거나, 명령이 막히면 = 문서 결함.** 모든 어긋남·막힘은 §11 결함으로 기록한다(어느 단계, 어떤 OS 변형, 무엇이 빠졌는지, 문서 줄/섹션).
+4. **크로스 환경.** 문서에 OS 변형(예: `# Linux · macOS · WSL` vs `# Windows PowerShell`)이 있으면 현재 OS 변형을 실행하고, 한쪽 변형만 있으면 그 자체를 결함으로 플래그한다.
 
 ## 사전 조건
 
-- `docs/history.md` 또는 사용자 메시지에서 **현재 Phase 번호 N** 확인.
-- 해당 Phase 의 `infra/phases/0N-*/main.bicep` 이 존재하고 직전 deployment 가 `Succeeded` 인지 확인.
+- **세션 번호 N** 확인(인자 또는 본문). 누락 시 짧게 묻고 중단.
+- `docs/sessions/0N-*.md` 존재 확인. (구 `docs/learning-paths/` 경로는 폐기됨 — 실제 경로는 `docs/sessions/`.)
+- **실제 Azure 배포가 일어난다.** `az account show` 로 로그인·구독 컨텍스트 확인. CLAUDE.md §7 대로 **유료 자원이 뜨므로**, 시작 전 이 세션이 띄우는 주요 유료 자원을 한 줄로 고지한다.
+- **작업 폴더 준비.** 문서의 `## 시작본 코드 받기` 절을 그대로 실행해 `workshop/` 을 만든다 (`cp -a save-points/session-NN/start/. workshop/`). 깨끗한 재현을 위해 기존 `workshop/` 이 있으면 덮어쓸지 사용자에게 먼저 confirm.
 
-## 검증 시나리오
+## 실행 절차 — 문서 단계를 위에서 아래로
 
-다음 5개 카테고리를 순서대로. 각 단계 결과는 명확히 표 / 코드 블록으로 기록.
+세션 문서의 `## N 단계 : ...` 헤딩을 **순서대로** 진행한다(세션마다 단계 구성은 다름 — 문서에 있는 단계를 그대로 따른다). 각 단계마다 A→D:
 
-### 1. 자원 존재 / 구성
+### A. 단계 읽기
+해당 `## N 단계` 블록 전체(하위 `###` 포함)를 Read. 그 안에서 (a) **생성/수정할 파일과 그 내용**, (b) **실행할 명령 블록**, (c) **문서가 명시한 "기대 결과"** 를 식별한다.
 
-```bash
-az resource list -g rg-ai200challenge-dev \
-  --query "[].{name:name, type:type}" -o table
-```
+### B. 코드 생성 단계 (예: "Bicep 모듈 조립", "앱 코드 채우기")
+- 문서가 "`<파일>` 에 이 블록을 채우라" 고 하면, Write/Edit 로 그 파일에 문서가 보여준 내용을 **그대로** 작성한다. 정답지에서 가져오지 않는다.
+- 저장 시 PostToolUse lint hook(`bicep-build.sh`, `python-lint.sh`)이 자동 실행된다. **lint 실패 = 문서가 보여준 코드가 통과 못 한다는 결함** → 기록.
+- 단계 종료 후 `save-points/session-NN/complete/` 의 대응 파일과 `diff`. **의미 있는 차이 = 문서가 그 코드 일부를 안 보여줬다는 신호** → 결함으로 기록하고, 재현을 이어가기 위해 정답지 기준으로 보정한 뒤 **"문서 외 보정"임을 명시**(그래야 결함이 가려지지 않음).
 
-기대 자원: `infra/phases/0N-*/main.bicep` 에서 새로 만든 자원이 모두 보여야 함. 누락 / 추가 자원 발견 시 즉시 사용자에게 보고.
+### C. 명령 실행 단계 (예: "Bicep 배포", "시드", "빌드·배포·호출")
+- 문서의 bash 블록을 **그대로** 실행한다.
+- **배포**: 문서가 what-if(예: `### 3.1 변경사항 미리보기`)를 먼저 시키면 그대로 what-if → 그다음 `az deployment ... create`. **문서 순서를 따르는 것 자체가 CLAUDE.md §6 의 "검토 후 배포"를 충족**한다. what-if 가 **예상 밖 삭제/대량 변경**을 보이면 즉시 멈추고 사용자에게 보고(문서대로인데 위험 신호 = 결함).
+- **이미지 빌드·푸시**(§5 IaC 예외): `az acr login` + `docker build --platform linux/amd64` + `docker push` 를 문서대로. (ARM Mac 함정 회피용 `--platform` 이 문서에 없으면 결함.)
+- **호출·검증 커맨드**(curl / psql / KQL 등): 문서가 보여준 **"기대 결과"와 실제 출력을 대조**. 불일치는 기록.
+- **명령이 실패하면**: 문서만으로 막힌 지점 = **1급 결함**. 에러와 재현 명령을 인용해 기록. 진행을 위해 최소 보정이 필요하면 **무엇을 왜 했는지 명시**하고 잇거나, 사용자 판단이 필요하면 멈춘다.
 
-Phase-specific 추가 점검 (해당 Phase 모듈에 따라):
-- PG: `az postgres flexible-server show ... --query state` = `Ready`, `azure.extensions=VECTOR`
-- Cosmos: `az cosmosdb show ... --query enableLocalAuth` = `false`, vector indexing 활성
-- AOAI: `az cognitiveservices account deployment list ...` 으로 model deployment 모두 Succeeded
-- AKS: `az aks get-credentials ...` 후 `kubectl get nodes`
+### D. GUI 확인 단계 (예: "Azure Portal UI 에서 확인")
+참가자(사용자) 몫이라 Claude 가 직접 못 한다. 이 단계의 항목을 **체크리스트로 사용자에게 넘기고**, CLI 로 동등 확인이 가능한 것(예: `az ... show`, KQL Logs 조회)은 대신 수행해 보고한다(§11 — scale-to-zero 등으로 GUI 가 비실용적이면 KQL/CLI 우선).
 
-### 2. 권한 / RBAC
+## 진행 중 상태 보고
+각 단계 끝에 한 줄 요약: `[단계 N] 코드 X파일 생성 · 명령 Y개 실행 — 통과 / 결함 Z건`. 누적 결함 목록을 계속 유지한다.
 
-UAMI 기반 인증이 정상인지:
-- ACR pull: `az role assignment list --assignee <uami-principalId>` 에 `AcrPull` 있어야
-- AOAI: `Cognitive Services OpenAI User` 부여 확인
-- Cosmos / PG / Redis 등 Phase 자원의 RBAC 도 같은 방식
+## 종료 — 충실도 리포트 (최종 산출물)
 
-CLAUDE.md §8 룰 — 본인 IP / objectId 가 git 안 박혀있는지 grep 로 한 번 더 확인 (`grep -r "<my-ip>" infra/`).
+모든 단계를 마치면:
 
-### 3. 컨테이너 / 앱 헬스
+1. **단계별 결과 표**
 
-```bash
-# ACA api revision Healthy 확인
-az containerapp revision list -g rg-ai200challenge-dev \
-  -n ca-ai200challenge-api-dev \
-  --query "[?properties.active==\`true\`].{name:name, image:properties.template.containers[0].image, healthState:properties.healthState}" \
-  -o table
+   ```
+   | 단계 | 한 일 | complete 일치 | 명령 통과 | 결함 |
+   |---|---|---|---|---|
+   | 1 Bicep 조립 | main.bicep 8블록 작성 | ✅ | — | 0 |
+   | 3 배포 | what-if→create | — | ✅ | 0 |
+   | 5 빌드·호출 | 이미지2 + curl | — | ❌ /chat 500 | 1 |
+   ```
 
-# /healthz (ingress 임시 external 토글 후, 끝나면 internal 회수)
-az containerapp ingress update -g rg-ai200challenge-dev -n ca-ai200challenge-api-dev --type external
-API=$(az containerapp show ... --query properties.configuration.ingress.fqdn -o tsv)
-curl -fsS "https://$API/healthz"
-# ... 검증 후
-az containerapp ingress update ... --type internal
-```
+2. **결함 목록** — §11 분류로: `빠진 코드` / `깨진 명령` / `OS 한쪽만` / `환경 의존(절대경로·기존자원·수동권한 전제)` / `기대결과 불일치`. 각 결함에 **`docs/sessions/0N-*.md` 의 줄·섹션 + 제안 수정**을 단다.
+3. **배포 상태**: 실제로 뜬 자원(`az resource list -g rg-ai200ws-dev`), 헬스(문서 범위 내 `curl /healthz` 등).
+4. **자원 정리는 이 Skill 의 책임이 아니다.** 검증 끝나면 사용자가 GUI 확인 후 "정리해" → `/phase-cleanup`. 검증 흐름에서 잠시 부여한 임시 권한·ingress external 토글 등은 같은 흐름에서 회수(§7 예외).
 
-ingress 토글은 *검증 흐름의 일부* 라 CLAUDE.md §7 의 임시 권한 회수 예외에 해당 — 같은 흐름에서 회수.
+## 가드
 
-### 4. 데이터 라운드트립 (해당 Phase 의 핵심 라우터)
-
-Phase 별로 검증 시나리오가 다름. main agent 는 phase-specific 시나리오를 만들어 실행:
-
-- Phase 4: `/api/index?store=cosmos` → `/api/search?store=cosmos`
-- Phase 5: `/api/index?store=pg` + `/api/search?store=pg&index_kind=hnsw|ivf` 비교
-- Phase 6: 시맨틱 캐시 hit/miss + chat RAG
-- Phase 7: 변경 피드 트리거 → 자동 임베딩
-- Phase 8: 시크릿이 KV 에서 로드되는지
-- Phase 9: 트레이스가 App Insights 에 도달하는지
-
-샘플 chunk / 쿼리 셋은 5-건 정도로 작게 (학습 트래픽).
-
-### 5. Log Analytics KQL (Phase 9 이후 핵심)
-
-```kusto
-ContainerAppConsoleLogs_CL
-| where ContainerAppName_s == "ca-ai200challenge-api-dev"
-| where TimeGenerated > ago(15m)
-| project TimeGenerated, RevisionName_s, Log_s
-| order by TimeGenerated desc
-| take 50
-```
-
-부트스트랩 / 호출 / 에러 패턴 확인. Phase-specific 함정 (예: chicken-and-egg, 권한 거부) 이 로그에 보이면 함정·교훈 절에 추가.
-
-## 결과 기록
-
-검증 끝나면 `docs/learning-paths/0N-*.md` 의 다음 절을 채움:
-
-1. **"Cosmos vs PG 비교 측정"** (또는 phase 별 측정 표) — 실측 수치로 *_TBD_* 교체
-2. **"함정 · 교훈"** — 검증 중 발견한 새 함정 추가 (자세한 본문, 재현 명령, 해결책)
-3. **"MS Learn 경로 커버리지"** 표의 "사용 / 부분 사용 / 생략" 컬럼 — 실제 검증 결과로 갱신
-
-## 임시 권한 회수 (검증 종료 단계)
-
-CLAUDE.md §7 의 *임시 권한 회수는 정리 룰의 예외*. 검증 흐름의 일부로 부여한 것은 같은 흐름에서 회수:
-
-- 본인 objectId 임시 admin (PG / Cosmos) — 검증 종료 시 즉시 delete
-- ACA api ingress external — internal 로 복귀
-
-자원 자체 (PG / Cosmos / AOAI 등) 는 *건드리지 않음* — 그건 단계 7 (`/phase-cleanup`) 의 책임.
-
-## 단계 6 (사용자 GUI 검증) 진입 안내
-
-검증 결과 보고 마지막에 다음 메시지를 사용자에게:
-
-> **단계 5 CLI 검증 완료.** 단계 6 GUI 검증은 사용자 본인이 Portal·브라우저·외부 도구로 추가 검증. 끝나면 "GUI 검증 끝" / "정리해" 라고 알려주세요. 그 전까지 자원 정리 명령 (`az ... delete`) 은 hook 차단됨.
+- **문서에 없는 명령을 임의로 추가·대체하지 않는다.** 부득이한 보정은 전부 "문서 외 보정"으로 표시해야 결함이 은폐되지 않는다.
+- 이 Skill 은 **생성·배포 전용** — 삭제 명령이 없다. `az ... delete` 는 `block-az-delete.sh` hook 이 차단(정상 동작).
+- **실제 비용 발생**(§7). 시작 전 유료 자원 고지, 종료 시 사용자에게 정리 경로(`/phase-cleanup`) 안내.
+- 사용자 식별 정보(IP·objectId)는 §8 대로 배포 시점 override — 문서가 파라미터 파일에 박아두라고 하면 그 자체가 결함.
 
 ## 출력 톤
-
-한국어. CLAUDE.md §4. 검증 5개 카테고리 결과를 표 / 체크박스로 명확히. 누락 / 실패는 즉시 빨간 깃발로 표시 (이모지 X — CLAUDE.md 안내 따라).
+한국어(§4). 단계 헤더로 진행을 명확히. 결함은 빨간 깃발로(이모지 X). **충실도 리포트가 이 Skill 의 최종 산출물**이며, 그 결함들이 곧 §11 문서 개선 작업의 입력이 된다.
