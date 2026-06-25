@@ -9,13 +9,11 @@
 //     --parameters workshop/infra/sessions/05-app-config-flags/main.bicepparam \
 //     --parameters userObjectId=$OID
 //
-// 의존성 (existing 참조):
-//   - session-00: Key Vault (aoai-endpoint secret), UAMI
-//   - session-01: Cosmos DB / session-02: PostgreSQL / session-03: Managed Redis
-//
-// 본 세션에서 신규 생성:
-//   - App Configuration (Free) + 키/값 + Key Vault reference + 피처 플래그 2개 + sentinel
-//   - 역할 할당: UAMI → App Configuration Data Reader, 사용자 → App Configuration Data Owner
+// 본 세션에서 할 일:
+//   아래 그룹별 모듈 호출과 출력 블록을 직접 채운다. 모듈 본체는
+//   ../../modules/session-05/ 에 이미 완성되어 있다 (수정하지 않는다).
+//   키/값·Key Vault 참조·피처 플래그는 Bicep 이 아니라 배포 후
+//   scripts/seed_app_config.py 로 시딩한다 (docs 2 단계 참고).
 // =============================================================================
 
 targetScope = 'resourceGroup'
@@ -52,13 +50,10 @@ var roleAppConfigDataOwner = '5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b'
 // App Configuration: 글로벌 unique (DNS, <name>.azconfig.io). uniqueString 접미사.
 var acName = take('ac-${projectId}-${env}-${uniqueString(resourceGroup().id, projectId, env)}', 50)
 
-// session-00~03 자원 이름 (각 세션 main.bicep 과 동일 규칙)
+// session-00 의 공용 UAMI (App Configuration 역할 부여 대상).
+// 키/값·Key Vault 참조·피처 플래그는 Bicep 이 아니라 배포 후 scripts/seed_app_config.py
+// 로 시딩하므로, 다른 세션 자원 (aoai·cosmos·pg·redis·kv) 의 existing 참조는 불필요하다.
 var uamiName = 'id-${projectId}-${env}'
-var kvName = take('kv-${projectId}-${env}-${uniqueString(subscription().id, projectId, env)}', 24)
-var cosmosName = take('cosmos-${projectId}-${env}-${uniqueString(resourceGroup().id, projectId, env)}', 44)
-var aoaiName = take('aoai-${projectId}-${env}-${uniqueString(subscription().id, projectId, env)}', 60)
-var redisName = take('redis-${projectId}-${env}-${uniqueString(resourceGroup().id, projectId, env)}', 60)
-var pgName = take('pg-${projectId}-${env}-${uniqueString(resourceGroup().id, projectId, env)}', 63)
 
 // -------- existing 참조 --------------------------------------------------------
 
@@ -66,23 +61,8 @@ resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' exis
   name: uamiName
 }
 
-resource kv 'Microsoft.KeyVault/vaults@2024-04-01-preview' existing = {
-  name: kvName
-}
-
-resource aoai 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = {
-  name: aoaiName
-}
-
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-12-01-preview' existing = {
-  name: cosmosName
-}
-
-resource redis 'Microsoft.Cache/redisEnterprise@2025-04-01' existing = {
-  name: redisName
-}
-
-// -------- 1) App Configuration store --------------------------------------------
+// -------- 1) App Configuration store 모듈 호출하기 ----------------------------
+// 힌트: app-configuration.bicep (name=acName, location, skuName='free', tags).
 
 module appConfig '../../modules/session-05/app-configuration.bicep' = {
   name: 'appConfig'
@@ -94,89 +74,10 @@ module appConfig '../../modules/session-05/app-configuration.bicep' = {
   }
 }
 
-// -------- 2) 일반 키/값 (비-시크릿 endpoint·host) --------------------------------
-//             값이 existing 자원의 런타임 속성이라 for-루프(시작 시점 계산)가 불가능하므로
-//             개별 모듈로 호출한다.
-
-module kvAoai '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-aoai-endpoint'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'aoai:endpoint'
-    value: aoai.properties.endpoint
-  }
-}
-
-module kvCosmos '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-cosmos-endpoint'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'cosmos:endpoint'
-    value: cosmos.properties.documentEndpoint
-  }
-}
-
-module kvPg '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-pg-host'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'pg:host'
-    value: '${pgName}.postgres.database.azure.com'
-  }
-}
-
-module kvRedis '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-redis-host'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'redis:host'
-    value: redis.properties.hostName
-  }
-}
-
-// sentinel — 이 키를 바꾸면 Provider 가 전체 설정을 새로 고친다 (refresh_on 대상).
-module sentinel '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'sentinel'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'sentinel'
-    value: '1'
-  }
-}
-
-// -------- 3) Key Vault reference (시크릿성 값) -----------------------------------
-//             session-01 이 저장한 aoai-endpoint secret 을 참조로 노출 (KV ref 패턴 시연).
-
-module kvRef '../../modules/session-05/app-configuration-keyvault-ref.bicep' = {
-  name: 'kvRef'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'secrets:aoai-endpoint'
-    secretUri: '${kv.properties.vaultUri}secrets/aoai-endpoint'
-  }
-}
-
-// -------- 4) 피처 플래그 --------------------------------------------------------
-
-module flagSemanticCache '../../modules/session-05/app-configuration-feature-flag.bicep' = {
-  name: 'flag-semanticCache'
-  params: {
-    storeName: appConfig.outputs.name
-    flagName: 'enable_semantic_cache'
-    enabled: true
-  }
-}
-
-module flagPgBackend '../../modules/session-05/app-configuration-feature-flag.bicep' = {
-  name: 'flag-pgBackend'
-  params: {
-    storeName: appConfig.outputs.name
-    flagName: 'enable_pg_backend'
-    enabled: false
-  }
-}
-
-// -------- 5) 역할 할당 — UAMI(읽기) / 사용자(토글용 쓰기) ------------------------
+// -------- 2) 역할 할당 모듈 호출하기 ----------------------------------------
+// 힌트: role-assignment-appconfig.bicep — UAMI 에 roleAppConfigDataReader,
+// (선택) if(!empty(userObjectId)) 로 사용자에 roleAppConfigDataOwner(principalType='User').
+// 시딩 스크립트가 본인 자격으로 store 데이터플레인에 쓰므로 Data Owner 가 필요하다.
 
 module dataReaderUami '../../modules/session-05/role-assignment-appconfig.bicep' = {
   name: 'dataReader-uami'
@@ -198,6 +99,7 @@ module dataOwnerUser '../../modules/session-05/role-assignment-appconfig.bicep' 
 }
 
 // -------- 출력 -----------------------------------------------------------------
+// 힌트: appConfigName, appConfigEndpoint (appConfig.outputs.endpoint).
 
 output appConfigName string = appConfig.outputs.name
 output appConfigEndpoint string = appConfig.outputs.endpoint

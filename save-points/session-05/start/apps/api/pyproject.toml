@@ -14,6 +14,9 @@ dependencies = [
 
     # Azure authentication
     "azure-identity>=1.19.0",
+    # azure.identity.aio (async credential) 는 async HTTP transport 로 aiohttp 를 요구한다.
+    # 명시하지 않으면 컨테이너 이미지에서 ImportError: aiohttp package is not installed 로 부팅 실패.
+    "aiohttp>=3.10.0",
 
     # Azure OpenAI
     "openai>=1.54.0",

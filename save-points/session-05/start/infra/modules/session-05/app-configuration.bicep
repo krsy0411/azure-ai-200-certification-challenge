@@ -24,6 +24,12 @@ resource store 'Microsoft.AppConfiguration/configurationStores@2024-05-01' = {
   }
   properties: {
     disableLocalAuth: true
+    // local auth 가 꺼진 store 에 ARM 이 keyValues·feature flag 를 쓰려면 pass-through
+    // (배포자 Entra 신원) 인증이 필요. 없으면 자식 자원 배포가 'local auth disabled' Conflict 로 실패.
+    dataPlaneProxy: {
+      authenticationMode: 'Pass-through'
+      privateLinkDelegation: 'Disabled'
+    }
   }
 }
 
