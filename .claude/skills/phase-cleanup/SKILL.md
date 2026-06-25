@@ -23,6 +23,18 @@ CLAUDE.md §7 자원 라이프사이클 룰의 자동 강제 도구.
 
 CLAUDE.md §7 의 **보존 / 정리 분류** 적용 (2026-05-18 룰 갱신 — session-04 실측 비용 기반).
 
+### soft-delete / 이름 예약 주의 자원
+
+삭제 후에도 **이름이 일정 기간 예약**되어, 같은 이름으로 재배포 시 충돌하는 자원:
+
+| 자원 종류 | soft-delete 기간 | purge 가능? | 처리 지침 |
+|---|---|---|---|
+| Key Vault (`enablePurgeProtection: true`) | 7일~ | ❌ purge 불가 (purge protection 이 purge 자체를 차단) | **삭제 금지** — 보존 목록에서 절대 이동 X. 삭제하면 이름이 7일 이상 잠겨 재배포 불가 |
+| Azure OpenAI (Cognitive Services) | 48시간 | ✅ `az cognitiveservices account purge` | 삭제 직후 즉시 purge — 이름 즉시 해제. purge 없이 두면 48시간 동안 같은 이름 재배포 불가 |
+| Log Analytics Workspace | 14일 (데이터만) | ✅ 삭제 시 `--force` 플래그 | `--force` 없이 삭제하면 데이터가 14일 보존(복구 가능). `--force` 추가 시 즉시 완전 삭제 |
+
+나머지 (Cosmos DB, PostgreSQL, Managed Redis, ACA Container Apps, ACA Environment, ACR, App Configuration, 공용 UAMI 등): soft-delete 없음, 삭제 즉시 이름 해제. Cosmos DB 는 soft-delete 는 없지만 백엔드 정리에 수 분 걸리므로 같은 이름 즉시 재배포 시 실패할 수 있습니다 (`az cosmosdb show` 가 NotFound 될 때까지 대기).
+
 ### 보존 (무료 또는 사실상 무료)
 
 - **ACR Basic** (`acrai200wsdev*`) — storage 만 ~260 KRW/일, 이미지 학습 자산
