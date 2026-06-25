@@ -34,33 +34,24 @@
 
 ## 진행 중 막혔을 때 (save-points)
 
-본 챌린지는 **단일 `main` 브랜치 + 폴더 복사** 방식의 save-point 메커니즘을 사용합니다. 학습자는 아래 예시처럼 `save-points/session-NN/{start,complete}/` 안의 코드를 `workshop/` 폴더로 복사해 그 위에서 작업합니다.
+본 챌린지는 **단일 `main` 브랜치 + 폴더 복사** 방식의 save-point 메커니즘을 사용합니다. 학습자는 `save-points/session-NN/{start,complete}/` 안의 코드를 `workshop/` 폴더로 복사해 그 위에서 작업합니다. `workshop/` 폴더는 `.gitignore` 에 등록되어 있어 안에서 무엇을 하든 본 저장소의 git 상태는 깨끗하게 유지됩니다.
 
-```bash
-# 세션 시작 — 시작본을 작업 폴더로
-mkdir -p workshop && \
-  cp -a save-points/session-03/start/. workshop/
+OS 별 복사 명령 (Linux · macOS · WSL / Windows PowerShell) 과 세션 전환 방법 등 자세한 사용법은 [save-points/README.md](./save-points/README.md) 를 참고합니다.
 
-# 막혔을 때 — 완성본으로 덮어쓰기
-cp -a save-points/session-03/complete/. workshop/
-```
-
-`workshop/` 폴더는 `.gitignore` 에 등록되어 있어 안에서 무엇을 하든 본 저장소의 git 상태는 깨끗하게 유지됩니다. 자세한 사용법은 [save-points/README.md](./save-points/README.md) 를 참고합니다.
-
-특정 단계에서 막혔다면 [docs/pitfalls/common.md](./docs/pitfalls/common.md) 에서 **모든 세션의 함정·주의를 한곳에서** 검색합니다. 인증·RBAC, Bicep·IaC, 벡터·인덱싱, 관찰 가능성 등 카테고리별로 묶여 있으며 증상·원인·회피로 정리되어 있습니다.
+특정 단계에서 막혔다면 [docs/pitfalls/common.md](./docs/pitfalls/common.md) 에서 **모든 세션의 함정·주의를 한곳에서** 확인할 수 있습니다. 인증·RBAC, Bicep·IaC, 벡터·인덱싱, 관찰 가능성 등 카테고리별로 묶여 있으며 증상·원인·회피로 정리되어 있습니다.
 
 ---
 
 ## 비용
 
 > [!IMPORTANT]
-> 챌린지 종료 후 **곧바로 자원을 정리할 경우** 약 **$10~20 (USD)** 수준입니다. 정리를 잊을 경우 가장 큰 누적 비용은 Managed Redis Enterprise M10와 AKS LB+IP입니다.
+> 정리를 잊을 경우 가장 큰 누적 비용은 **compute 가 idle 상태로도 과금되는 자원** — **ACA Container Apps 와 AKS(LB+IP)** 입니다.
 > 
-> 챌린지 제작자가 일주일동안 session-00 ~ session-04까지 진행한 후 약 7일동안 자원을 정리하지 않았더니 약 13만원 사용했습니다. 그러나 챌린지 진행 직후 바로 정리한다면 1만원도 사용하지 않습니다.
+> 챌린지 제작자 본인은 일주일동안 session-00 ~ session-04까지 진행한 후 약 7일동안 자원을 정리하지 않았더니 약 13만원 사용했습니다. 다만 이 경험 이후 Managed Redis 등급을 `Balanced_B0`로 설정하여 비용을 최소화했습니다.
 > 
-> 그러니 하루 안에 챌린지를 수행하는 것을 권장드립니다.
+> 이제 하루 안에 챌린지를 끝낸다면 최대 1만원 수준으로 끝낼 수 있습니다. **그러니 하루 안에 챌린지를 수행하는 것을 권장드립니다.**
 >
-> 모든 내용을 진행했다면 [docs/cleanup.md](./docs/cleanup.md)의 정리 절차를 반드시 수행합니다.
+> 마지막으로, 모든 내용을 진행했다면 [docs/cleanup.md](./docs/cleanup.md)의 정리 절차를 반드시 수행합니다.
 
 ---
 

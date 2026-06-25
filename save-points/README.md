@@ -10,7 +10,9 @@
 # Linux · macOS · WSL
 mkdir -p workshop && \
   cp -a save-points/session-01/start/. workshop/
+```
 
+```powershell
 # Windows PowerShell
 New-Item -ItemType Directory -Force -Path workshop | Out-Null
 Copy-Item -Path save-points/session-01/start/* -Destination workshop -Recurse -Force
