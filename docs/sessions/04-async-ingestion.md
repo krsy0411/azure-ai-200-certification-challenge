@@ -59,7 +59,7 @@ infra/modules/session-04/
 
 ### 1.2 Service Bus + Storage
 
-`// -------- 1) ...` 과 `// -------- 2) ...` 주석 아래에 추가합니다.
+`// -------- 1) Service Bus namespace + queue ...` 주석 아래에 다음을 추가합니다. Standard 네임스페이스를 만들고, 그 위에 DLQ 정책(`maxDeliveryCount: 5`)을 가진 `ingest-queue` 큐를 올립니다.
 
 ```bicep
 module serviceBus '../../modules/session-04/service-bus-namespace.bicep' = {
@@ -80,7 +80,11 @@ module ingestQueue '../../modules/session-04/service-bus-queue.bicep' = {
     maxDeliveryCount: 5
   }
 }
+```
 
+`// -------- 2) Storage (키 인증 off) ...` 주석 아래에 다음을 추가합니다. 공유 키 인증을 끈(`allowSharedKeyAccess=false`) 스토리지 계정으로, `documents` · `deployments` 컨테이너가 함께 생성됩니다.
+
+```bicep
 module storage '../../modules/session-04/storage-account.bicep' = {
   name: 'storage'
   params: {
@@ -189,9 +193,9 @@ module sbSenderUser '../../modules/session-04/role-assignment-servicebus.bicep' 
 }
 ```
 
-### 1.5 Cosmos 컨테이너 + Function App
+### 1.5 Cosmos lease + doc_stats 컨테이너
 
-`// -------- 5) ...` 와 `// -------- 6) ...`, 그리고 `// -------- 출력` 주석 아래에 추가합니다.
+`// -------- 5) Cosmos lease + doc_stats 컨테이너 ...` 주석 아래에 다음을 추가합니다. change feed 가 진행 위치를 기록하는 `leases` 컨테이너와, `on_cosmos_change` 가 문서별 청크 수를 집계하는 `doc_stats` 컨테이너입니다.
 
 ```bicep
 module leaseContainer '../../modules/session-04/cosmos-container.bicep' = {
@@ -211,9 +215,15 @@ module statsContainer '../../modules/session-04/cosmos-container.bicep' = {
     partitionKeyPath: '/doc_id'
   }
 }
+```
 
-// Function(Azure 호스팅) 이 UAMI 로 PG 에 접속하려면 PG 방화벽이 Azure 서비스를 허용해야
-// 한다. session-02 는 dev IP 만 열므로 여기서 추가 (없으면 함수 _upsert_pg 가 ConnectionTimeout).
+### 1.6 PostgreSQL 방화벽 — Azure 서비스 허용
+
+`// -------- 5b) PostgreSQL 방화벽 — Azure 서비스 허용 ...` 주석 아래에 다음을 추가합니다. Azure 호스팅 Function 이 User Assigned Managed Identity 로 PostgreSQL 에 접속하려면 PostgreSQL 방화벽이 Azure 서비스를 허용해야 합니다. session-02 는 dev IP 만 열어 두었으므로 여기서 Azure 서비스 허용 규칙을 추가합니다 (없으면 함수의 `_upsert_pg` 가 ConnectionTimeout 으로 실패합니다). session-02 의 `postgres-firewall-rule.bicep` 를 재사용합니다.
+
+```bicep
+// Function(Azure 호스팅) 이 UAMI 로 PG 에 접속하려면 PG 방화벽이 Azure 서비스를 허용해야한다. 
+// session-02 는 dev IP 만 열므로 여기서 추가 (없으면 함수 _upsert_pg 가 ConnectionTimeout).
 module pgAllowAzure '../../modules/session-02/postgres-firewall-rule.bicep' = {
   name: 'pgAllowAzure'
   params: {
@@ -223,7 +233,13 @@ module pgAllowAzure '../../modules/session-02/postgres-firewall-rule.bicep' = {
     endIpAddress: '0.0.0.0'
   }
 }
+```
 
+### 1.7 Function App (Flex Consumption)
+
+`// -------- 6) Function App (Flex Consumption) ...` 주석 아래에 다음을 추가합니다. Flex Consumption 플랜(`plan`)을 먼저 만들고, 그 위에 함수 앱(`functionApp`)을 올립니다. `dependsOn` 에 Storage·Service Bus 역할과 PostgreSQL 방화벽 규칙을 명시해, 함수가 부팅되기 전에 RBAC·네트워크 접근이 준비되도록 합니다.
+
+```bicep
 module plan '../../modules/session-04/function-app-plan-flex.bicep' = {
   name: 'plan'
   params: {
@@ -262,6 +278,10 @@ module functionApp '../../modules/session-04/function-app-flex.bicep' = {
 }
 ```
 
+### 1.8 출력
+
+`// -------- 출력 ...` 주석 아래에 다음 4개 출력을 추가합니다. 2단계 이후 명령에서 자원 이름을 조회할 때 사용합니다.
+
 ```bicep
 output serviceBusName string = serviceBus.outputs.name
 output storageName string = storage.outputs.name
@@ -269,7 +289,9 @@ output functionAppName string = functionApp.outputs.name
 output systemTopicName string = systemTopic.outputs.name
 ```
 
-### 1.6 조립 검증 + 배포
+### 1.9 조립 검증 + 배포
+
+먼저 Bicep 이 오류 없이 빌드되는지 확인합니다.
 
 ```bash
 az bicep build --file infra/sessions/04-async-ingestion/main.bicep --outfile /tmp/main.json && echo "BUILD OK"
@@ -281,10 +303,12 @@ az bicep build --file infra/sessions/04-async-ingestion/main.bicep --outfile "$e
 if ($?) { "BUILD OK" }
 ```
 
+배포 전에 `what-if` 로 어떤 자원이 생성·변경되는지 미리 확인합니다.
+
 ```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
 
-az deployment group create \
+az deployment group what-if \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/04-async-ingestion/main.bicep \
   --parameters infra/sessions/04-async-ingestion/main.bicepparam \
@@ -295,6 +319,28 @@ az deployment group create \
 # Windows PowerShell
 $OID = (az ad signed-in-user show --query id -o tsv)
 
+az deployment group what-if `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/04-async-ingestion/main.bicep `
+  --parameters infra/sessions/04-async-ingestion/main.bicepparam `
+  --parameters userObjectId=$OID
+```
+
+> [!NOTE]
+> `what-if` 출력에서 역할 할당이 `Unsupported` 로 표기되는 경우가 있습니다. 본 세션은 역할 할당 4건이 `Unsupported` 로 나오며, 이는 정상이고 실제 배포는 성공합니다.
+
+미리보기 내용이 예상과 맞으면 같은 `$OID` 로 실제 배포를 실행합니다.
+
+```bash
+az deployment group create \
+  --resource-group rg-ai200ws-dev \
+  --template-file infra/sessions/04-async-ingestion/main.bicep \
+  --parameters infra/sessions/04-async-ingestion/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell
 az deployment group create `
   --resource-group rg-ai200ws-dev `
   --template-file infra/sessions/04-async-ingestion/main.bicep `
@@ -305,7 +351,7 @@ az deployment group create `
 > [!NOTE]
 > Service Bus · Event Grid · Storage · Function App 동시 배포에 약 **5~7분** 소요됩니다.
 
-### 1.7 배포 완료 확인
+### 1.10 배포 완료 확인
 
 자원 이름은 글로벌 unique 접미사가 붙으므로 조회해 환경변수에 담아둡니다.
 

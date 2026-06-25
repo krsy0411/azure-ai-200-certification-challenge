@@ -110,6 +110,12 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-12-01-preview' exist
 // 힌트: cosmos-container.bicep ×2 — name='leases'(partitionKeyPath='/id'),
 //       name='doc_stats'(partitionKeyPath='/doc_id'), accountName=cosmos.name.
 
+// -------- 5b) PostgreSQL 방화벽 — Azure 서비스 허용 모듈 호출하기 ---------------
+// 힌트: session-02 의 postgres-firewall-rule.bicep 를 재사용합니다.
+//       name='AllowAllAzureServices', startIpAddress='0.0.0.0', endIpAddress='0.0.0.0'.
+//       Azure 호스팅 Function 이 UAMI 로 PG 에 접속하려면 필요합니다
+//       (session-02 는 dev IP 만 열어 둠 — 없으면 함수 _upsert_pg 가 ConnectionTimeout).
+
 // -------- 6) Function App (Flex Consumption) 모듈 호출하기 ---------------------
 // 힌트: function-app-plan-flex.bicep → function-app-flex.bicep.
 //       function-app-flex 파라미터: planId, uamiId=uami.id, uamiClientId,
