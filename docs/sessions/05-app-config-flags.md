@@ -34,22 +34,21 @@ Copy-Item -Path save-points/session-05/start/* -Destination workshop -Recurse -F
 
 `workshop/infra/sessions/05-app-config-flags/main.bicep` 을 열고, 그룹별 주석을 찾아 코드를 채웁니다.
 
+이 단계의 Bicep 은 **App Configuration store 와 역할 할당만** 만듭니다. 키/값·Key Vault 참조·피처 플래그는 Bicep 이 아니라 배포 후 [`scripts/seed_app_config.py`](#2-단계--설정값-시딩) 로 시딩합니다 (그 이유는 [2 단계](#2-단계--설정값-시딩) 에서 설명합니다).
+
 ### 1.1 호출할 모듈 한눈에 보기
 
 `infra/modules/session-05/` 에 완성되어 있는 모듈입니다.
 
 ```text
 infra/modules/session-05/
-├── app-configuration.bicep           # Free 등급 store
-├── app-configuration-keyvalue.bicep  # 일반 키/값 (재사용)
-├── app-configuration-keyvault-ref.bicep  # Key Vault reference
-├── app-configuration-feature-flag.bicep  # 피처 플래그
-└── role-assignment-appconfig.bicep   # 역할 부여 (재사용)
+├── app-configuration.bicep         # Free 등급 store
+└── role-assignment-appconfig.bicep # 역할 부여 (재사용)
 ```
 
-### 1.2 store + 키/값 + sentinel
+### 1.2 store 모듈 호출
 
-`// -------- 1) ...` · `// -------- 2) ...` · `// -------- 3) ...` 주석 아래에 채웁니다. 키/값 값이 existing 자원의 런타임 속성이라 for-루프가 불가능하므로 4개를 개별 호출합니다.
+`// -------- 1) App Configuration store 모듈 호출하기` 주석 아래에 채웁니다. 빈 store 만 만들고, 설정값은 [2 단계](#2-단계--설정값-시딩) 에서 시딩합니다.
 
 ```bicep
 module appConfig '../../modules/session-05/app-configuration.bicep' = {
@@ -61,89 +60,11 @@ module appConfig '../../modules/session-05/app-configuration.bicep' = {
     tags: commonTags
   }
 }
-
-module kvAoai '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-aoai-endpoint'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'aoai:endpoint'
-    value: aoai.properties.endpoint
-  }
-}
-
-module kvCosmos '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-cosmos-endpoint'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'cosmos:endpoint'
-    value: cosmos.properties.documentEndpoint
-  }
-}
-
-module kvPg '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-pg-host'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'pg:host'
-    value: '${pgName}.postgres.database.azure.com'
-  }
-}
-
-module kvRedis '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'kv-redis-host'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'redis:host'
-    value: redis.properties.hostName
-  }
-}
-
-module sentinel '../../modules/session-05/app-configuration-keyvalue.bicep' = {
-  name: 'sentinel'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'sentinel'
-    value: '1'
-  }
-}
 ```
 
-### 1.3 Key Vault reference + 피처 플래그
+### 1.3 역할 할당
 
-`// -------- 4) ...` 와 `// -------- 5) ...` 주석 아래에 채웁니다. Key Vault reference 는 값이 아니라 secret URI 포인터만 저장하고, Provider 가 `load()` 시 자동 해석합니다.
-
-```bicep
-module kvRef '../../modules/session-05/app-configuration-keyvault-ref.bicep' = {
-  name: 'kvRef'
-  params: {
-    storeName: appConfig.outputs.name
-    key: 'secrets:aoai-endpoint'
-    secretUri: '${kv.properties.vaultUri}secrets/aoai-endpoint'
-  }
-}
-
-module flagSemanticCache '../../modules/session-05/app-configuration-feature-flag.bicep' = {
-  name: 'flag-semanticCache'
-  params: {
-    storeName: appConfig.outputs.name
-    flagName: 'enable_semantic_cache'
-    enabled: true
-  }
-}
-
-module flagPgBackend '../../modules/session-05/app-configuration-feature-flag.bicep' = {
-  name: 'flag-pgBackend'
-  params: {
-    storeName: appConfig.outputs.name
-    flagName: 'enable_pg_backend'
-    enabled: false
-  }
-}
-```
-
-### 1.4 역할 할당 + 출력
-
-`// -------- 6) ...` 와 `// -------- 출력` 주석 아래에 채웁니다. User Assigned Managed Identity 는 읽기(`Data Reader`), 사용자는 토글을 위한 쓰기(`Data Owner`) 를 부여합니다.
+`// -------- 2) 역할 할당 모듈 호출하기` 주석 아래에 채웁니다. User Assigned Managed Identity 는 읽기(`Data Reader`), 사용자는 시딩·토글을 위한 쓰기(`Data Owner`) 를 부여합니다. 사용자에게 `Data Owner` 가 필요한 이유는, [2 단계](#2-단계--설정값-시딩) 의 시딩 스크립트가 본인 자격으로 store 데이터플레인에 키/값과 피처 플래그를 직접 쓰기 때문입니다.
 
 ```bicep
 module dataReaderUami '../../modules/session-05/role-assignment-appconfig.bicep' = {
@@ -166,6 +87,10 @@ module dataOwnerUser '../../modules/session-05/role-assignment-appconfig.bicep' 
 }
 ```
 
+### 1.4 출력
+
+`// -------- 출력` 주석 아래에 채웁니다.
+
 ```bicep
 output appConfigName string = appConfig.outputs.name
 output appConfigEndpoint string = appConfig.outputs.endpoint
@@ -183,10 +108,12 @@ az bicep build --file infra/sessions/05-app-config-flags/main.bicep --outfile "$
 if ($?) { "BUILD OK" }
 ```
 
+배포 전에 `what-if` 로 어떤 자원이 생성·변경되는지 미리 확인합니다.
+
 ```bash
 OID=$(az ad signed-in-user show --query id -o tsv)
 
-az deployment group create \
+az deployment group what-if \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/05-app-config-flags/main.bicep \
   --parameters infra/sessions/05-app-config-flags/main.bicepparam \
@@ -197,6 +124,28 @@ az deployment group create \
 # Windows PowerShell
 $OID = (az ad signed-in-user show --query id -o tsv)
 
+az deployment group what-if `
+  --resource-group rg-ai200ws-dev `
+  --template-file infra/sessions/05-app-config-flags/main.bicep `
+  --parameters infra/sessions/05-app-config-flags/main.bicepparam `
+  --parameters userObjectId=$OID
+```
+
+> [!NOTE]
+> `what-if` 출력에서 역할 할당이 `Unsupported` 로 표기되는 경우가 있습니다. 본 세션은 역할 할당 1건이 `Unsupported` 로 나오며, 이는 정상이고 실제 배포는 성공합니다.
+
+미리보기 내용이 예상과 맞으면 같은 `$OID` 로 실제 배포를 실행합니다.
+
+```bash
+az deployment group create \
+  --resource-group rg-ai200ws-dev \
+  --template-file infra/sessions/05-app-config-flags/main.bicep \
+  --parameters infra/sessions/05-app-config-flags/main.bicepparam \
+  --parameters userObjectId=$OID
+```
+
+```powershell
+# Windows PowerShell
 az deployment group create `
   --resource-group rg-ai200ws-dev `
   --template-file infra/sessions/05-app-config-flags/main.bicep `
@@ -209,13 +158,16 @@ az deployment group create `
 
 ### 1.6 배포 완료 확인
 
+> [!NOTE]
+> 본 세션의 App Configuration store 는 `disableLocalAuth: true` (연결 문자열·액세스 키 비활성, Entra ID + 역할 기반 접근만 허용) 로 배포됩니다. 그래서 store 의 데이터플레인을 다루는 `az appconfig` 명령 (`feature`·`kv` 의 `list`·`show`·`set`·`disable`·`enable`) 에는 반드시 `--auth-mode login` 을 붙입니다. 없으면 `Cannot find a read write access key ...` 오류로 실패합니다. 반면 store 메타데이터를 조회하는 `az appconfig show` (컨트롤플레인) 에는 필요하지 않습니다.
+
+이 단계의 Bicep 은 빈 store 만 만들었으므로, store 가 정상 생성됐는지만 확인합니다 (키/값·피처 플래그는 아직 없습니다 — [2 단계](#2-단계--설정값-시딩) 시딩 뒤에 확인합니다).
+
 ```bash
 AC=$(az appconfig list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 
 az appconfig show -n $AC -g rg-ai200ws-dev \
   --query "{state:provisioningState, sku:sku.name, endpoint:endpoint}" -o jsonc
-
-az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
 ```
 
 ```powershell
@@ -224,17 +176,87 @@ $AC = (az appconfig list -g rg-ai200ws-dev --query "[0].name" -o tsv)
 
 az appconfig show -n $AC -g rg-ai200ws-dev `
   --query "{state:provisioningState, sku:sku.name, endpoint:endpoint}" -o jsonc
-
-az appconfig feature list -n $AC --query "[].{key:key, state:state}" -o table
 ```
 
-기대 — `Succeeded`, `sku: free`, 피처 플래그 2개 (`enable_semantic_cache` 는 on, `enable_pg_backend` 는 off).
+기대 — `provisioningState` 가 `Succeeded`, `sku` 가 `free` 입니다.
 
 ---
 
-## 2 단계 : 복붙으로 경험해보기
+## 2 단계 : 설정값 시딩
 
-### 2.1 App Configuration 로더 구현
+[1 단계](#1-단계--프로비저닝) 에서 만든 빈 store 에 키/값·Key Vault 참조·피처 플래그를 [`scripts/seed_app_config.py`](../../save-points/session-05/complete/scripts/seed_app_config.py) 로 시딩합니다.
+
+**왜 Bicep 이 아니라 스크립트인가** — store 가 `disableLocalAuth: true` 라, 키/값·피처 플래그 같은 데이터플레인 쓰기를 **Bicep 으로** 시도하면 문제가 생깁니다. 배포자(사용자)의 `App Configuration Data Owner` 역할이 같은 배포 안에서 부여되는데, 그 역할이 데이터플레인에 전파되는 데 수 분이 걸려 첫 쓰기가 `Forbidden` 으로 깨집니다. 그래서 store 와 역할만 Bicep 으로 만들고, **설정값은 배포가 끝나 역할이 데이터플레인에 전파된 뒤 본인 자격으로 시딩**합니다. 시딩 스크립트는 전파가 아직 안 끝나 `Forbidden` 이 나면 전파될 때까지 자동으로 재시도합니다.
+
+### 2.1 시딩에 필요한 엔드포인트를 환경변수로
+
+스크립트는 각 자원의 엔드포인트를 환경변수에서 읽습니다. 본인 구독에 배포된 자원에서 값을 조회해 내보냅니다.
+
+```bash
+RG=rg-ai200ws-dev
+AC=$(az appconfig list -g $RG --query "[0].name" -o tsv)
+export APP_CONFIG_ENDPOINT=$(az appconfig show -n $AC -g $RG --query endpoint -o tsv)
+export AOAI_ENDPOINT=$(az cognitiveservices account list -g $RG --query "[0].properties.endpoint" -o tsv)
+export COSMOS_ENDPOINT=$(az cosmosdb list -g $RG --query "[0].documentEndpoint" -o tsv)
+export PG_HOST=$(az postgres flexible-server list -g $RG --query "[0].fullyQualifiedDomainName" -o tsv)
+export REDIS_HOST=$(az redisenterprise list -g $RG --query "[0].hostName" -o tsv)
+export KV_VAULT_URI=$(az keyvault list -g $RG --query "[0].properties.vaultUri" -o tsv)
+```
+
+```powershell
+# Windows PowerShell
+$RG = "rg-ai200ws-dev"
+$AC = (az appconfig list -g $RG --query "[0].name" -o tsv)
+$env:APP_CONFIG_ENDPOINT = (az appconfig show -n $AC -g $RG --query endpoint -o tsv)
+$env:AOAI_ENDPOINT = (az cognitiveservices account list -g $RG --query "[0].properties.endpoint" -o tsv)
+$env:COSMOS_ENDPOINT = (az cosmosdb list -g $RG --query "[0].documentEndpoint" -o tsv)
+$env:PG_HOST = (az postgres flexible-server list -g $RG --query "[0].fullyQualifiedDomainName" -o tsv)
+$env:REDIS_HOST = (az redisenterprise list -g $RG --query "[0].hostName" -o tsv)
+$env:KV_VAULT_URI = (az keyvault list -g $RG --query "[0].properties.vaultUri" -o tsv)
+```
+
+### 2.2 시딩 실행
+
+`apps/api` 의 의존성 환경으로 시딩 스크립트를 실행합니다.
+
+```bash
+uv run --project apps/api python scripts/seed_app_config.py
+```
+
+다음과 비슷한 출력이 표시됩니다.
+
+```
+App Configuration 시딩 — 8 개 설정 → https://ac-ai200ws-dev-xxxx.azconfig.io
+완료 — 키/값 5 개 + 피처 플래그 2 개 시딩.
+```
+
+> [!NOTE]
+> 역할이 데이터플레인에 아직 전파되지 않았으면 `RBAC 전파 대기 중 (Forbidden) — 20s 후 재시도...` 가 찍히며 스크립트가 자동으로 재시도합니다. 직접 손대지 않고 그대로 두면 전파가 끝난 뒤 시딩이 이어집니다.
+
+### 2.3 시딩 검증
+
+store 의 데이터플레인을 조회하므로 두 명령 모두 `--auth-mode login` 이 필수입니다 (store 가 local-auth 비활성).
+
+```bash
+az appconfig kv list -n $AC --auth-mode login --query "[].key" -o table
+
+az appconfig feature list -n $AC --auth-mode login --query "[].{key:key, state:state}" -o table
+```
+
+```powershell
+# Windows PowerShell
+az appconfig kv list -n $AC --auth-mode login --query "[].key" -o table
+
+az appconfig feature list -n $AC --auth-mode login --query "[].{key:key, state:state}" -o table
+```
+
+기대 — 키/값 목록에 `aoai:endpoint` · `cosmos:endpoint` · `pg:host` · `redis:host` · `sentinel` · `secrets:aoai-endpoint` 6개가 나오고, 피처 플래그 2개 (`enable_semantic_cache` 는 on, `enable_pg_backend` 는 off) 가 나옵니다.
+
+---
+
+## 3 단계 : 복붙으로 경험해보기
+
+### 3.1 App Configuration 로더 구현
 
 `apps/api/src/config/loader.py` 의 `load_app_config` 함수가 `raise NotImplementedError` 로 비어 있습니다. 그 줄을 찾아 함수 본체를 아래 코드로 교체합니다.
 
@@ -253,7 +275,7 @@ async def load_app_config(settings: Settings) -> AppConfig:
     return AppConfig(provider, credential)
 ```
 
-### 2.2 이미지 빌드 · 배포 · 토글 실험
+### 3.2 이미지 빌드 · 배포 · 토글 실험
 
 ```bash
 ACR_NAME=$(az acr list -g rg-ai200ws-dev --query "[0].name" -o tsv)
@@ -289,8 +311,6 @@ $API_FQDN = (az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev `
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
-여기서는 CLI 로 ON/OFF 효과를 빠르게 확인합니다. Portal 토글로 절벽 차트를 만드는 본 캡쳐 시퀀스는 [3 단계 : Azure Portal UI 에서 확인](#3-단계--azure-portal-ui-에서-확인) 에서 진행합니다.
-
 캐시 ON 상태에서 검증용 트래픽을 흘려, hot 질문이 캐시 hit 으로 즉시 반환되는지 확인합니다. 헬퍼 스크립트는 hot 질문 (캐시 hit 유발) 과 다양한 질문 (retrieve+generate = miss 유발) 을 번갈아 보냅니다.
 
 ```bash
@@ -299,28 +319,31 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
 출력에서 `q=휴가 규정 알려줘` 줄이 두 번째 등장부터 0.1~0.2s 면 캐시 hit 입니다. 다양한 질문 줄은 retrieve+generate 를 매번 수행하므로 더 느립니다.
 
-CLI 로 피처 플래그를 OFF 로 토글하고, 폴링 주기만큼 대기한 뒤 다시 트래픽을 흘립니다. 이번에는 hot 질문도 캐시를 우회해 느려집니다.
+CLI 로 피처 플래그를 OFF 로 토글하고, 폴링 주기에 따라 반영될 때까지 잠시 대기한 뒤 다시 트래픽을 흘립니다. 이번에는 hot 질문도 캐시를 우회해 느려집니다.
+
+> [!NOTE]
+> 초기 플래그 상태는 앱 시작 시점에 반영되고, 실행 중인 앱에서의 런타임 토글은 provider 의 폴링 주기에 따라 반영됩니다. 본 챌린지 설정(`refresh_interval` 30초)에서는 토글 후 약 30~60초 내에 반영됩니다. 토글 직후 즉시 바뀌지 않더라도 정상이며, 폴링 주기가 지난 뒤(아래 `sleep 60`) 다시 확인합니다 (본인 설정 실수로 오해하지 않습니다).
 
 ```bash
-az appconfig feature disable -n $AC --feature enable_semantic_cache --yes
+az appconfig feature disable -n $AC --auth-mode login --feature enable_semantic_cache --yes
 sleep 60
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 6
 ```
 
 ```powershell
 # Windows PowerShell
-az appconfig feature disable -n $AC --feature enable_semantic_cache --yes
+az appconfig feature disable -n $AC --auth-mode login --feature enable_semantic_cache --yes
 Start-Sleep -Seconds 60
 uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 6
 ```
 
-`q=휴가 규정 알려줘` 줄까지 retrieve+generate 시간으로 느려지면 캐시가 우회된 것입니다.
+`q=휴가 규정 알려줘` 줄까지 retrieve+generate 시간으로 느려지면 캐시가 우회된 것입니다. 아직 hot 질문이 빠르게 반환된다면 반영이 덜 된 것이므로, 1~2분 더 기다렸다가 같은 트래픽 명령을 다시 실행해 확인합니다.
 
-다시 켜려면 `az appconfig feature enable -n $AC --feature enable_semantic_cache --yes`.
+다시 켜려면 `az appconfig feature enable -n $AC --auth-mode login --feature enable_semantic_cache --yes` 명령어를 터미널에 입력합니다.
 
 ---
 
-## 3 단계 : Azure Portal UI 에서 확인
+## 4 단계 : Azure Portal UI 에서 확인
 
 [Azure Portal](https://portal.azure.com) 에서 다음 경로를 직접 클릭합니다.
 
@@ -340,8 +363,8 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
       uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 15
       ```
 
-   2. **Feature manager** 에서 `enable_semantic_cache` 를 **OFF 로 토글** 합니다 (이 화면이 아래 캡쳐 대상).
-   3. 폴링 주기 (30~60초) 만큼 대기한 뒤, 캐시 OFF 상태로 같은 스크립트를 다시 실행해 트래픽 15건을 흘립니다.
+   2. **Feature manager** 에서 `enable_semantic_cache` 를 **OFF 로 토글** 합니다.
+   3. 폴링 주기에 따라 반영될 때까지 대기한 뒤 (약 30~60초), 캐시 OFF 상태로 같은 스크립트를 다시 실행해 트래픽 15건을 흘립니다.
 
       ```bash
       uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --count 15
@@ -349,15 +372,11 @@ uv run --project apps/api python scripts/send_chat_traffic.py --url $API_FQDN --
 
    4. `enable_semantic_cache` 를 다시 **ON 으로 토글** 해 원상복구합니다.
 
-   ![Feature manager 의 enable_semantic_cache 피처 플래그 토글을 보여 주는 Azure Portal 스크린샷](images/session-05/3b-app-config-feature-manager-toggle.png)
+       ![Feature manager 의 enable_semantic_cache 피처 플래그 토글을 보여 주는 Azure Portal 스크린샷](images/session-05/3b-app-config-feature-manager-toggle.png)
 
-   `enable_semantic_cache` 와 `enable_pg_backend` 플래그 2개가 나열되는지 확인합니다. 토글을 끄면 폴링 주기 (30~60초) 안에 API 의 캐시 동작이 바뀝니다. 위 ON → 토글 → OFF → 토글 시퀀스가 아래 4번 **Logs** 차트의 절벽 데이터를 만듭니다.
-
-3. **Key Vault** → **Secrets** — App Configuration 이 reference 하는 secret 이름은 노출, 실제 값은 권한이 있어야 조회
+3. **Key Vault** → **Secrets** — App Configuration이 참조하는 secret 이름은 확인 가능합니다. 실제 값은 권한이 있어야 조회할 수 있습니다.
 
    ![Key Vault 의 Secrets 목록에 aoai-endpoint 가 나열된 모습을 보여 주는 Azure Portal 스크린샷](images/session-05/3c-key-vault-secrets-list.png)
-
-   App Configuration 이 reference 하는 secret `aoai-endpoint` 의 이름이 목록에 노출되는지 확인합니다. 실제 값은 **Key Vault Secrets User** 같은 데이터 권한이 있어야 조회됩니다.
 
 4. **Application Insights** → **Logs** 에서 다음 KQL 실행
 
