@@ -494,7 +494,7 @@ async def _search_pg(
     return [r[0] for r in rows]
 ```
 
-실행 전 필요한 환경변수를 설정합니다. ([1.11](#111-배포-완료-확인) 의 `PG_NAME` · `PG_HOST` 환경변수를 사용합니다.)
+실행 전 필요한 환경변수를 설정합니다. 자원 이름·엔드포인트는 모두 `az` 로 그 자리에서 조회해 채우므로, 새 터미널에서 시작해도 그대로 동작합니다.
 
 ```bash
 # Linux · macOS · WSL
@@ -504,7 +504,7 @@ export AZURE_OPENAI_API_VERSION="2024-08-01-preview"
 export COSMOS_ENDPOINT=$(az cosmosdb list -g rg-ai200ws-dev --query "[0].documentEndpoint" -o tsv)
 export COSMOS_DATABASE="appdb"
 export COSMOS_CHUNKS_CONTAINER="chunks"
-export POSTGRES_HOST=$PG_HOST
+export POSTGRES_HOST=$(az postgres flexible-server list -g rg-ai200ws-dev --query "[0].fullyQualifiedDomainName" -o tsv)
 export POSTGRES_DATABASE="appdb"
 export POSTGRES_USER=$(az ad signed-in-user show --query userPrincipalName -o tsv)
 ```
@@ -517,7 +517,7 @@ $env:AZURE_OPENAI_API_VERSION = "2024-08-01-preview"
 $env:COSMOS_ENDPOINT = (az cosmosdb list -g rg-ai200ws-dev --query "[0].documentEndpoint" -o tsv)
 $env:COSMOS_DATABASE = "appdb"
 $env:COSMOS_CHUNKS_CONTAINER = "chunks"
-$env:POSTGRES_HOST = $PG_HOST
+$env:POSTGRES_HOST = (az postgres flexible-server list -g rg-ai200ws-dev --query "[0].fullyQualifiedDomainName" -o tsv)
 $env:POSTGRES_DATABASE = "appdb"
 $env:POSTGRES_USER = (az ad signed-in-user show --query userPrincipalName -o tsv)
 ```

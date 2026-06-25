@@ -344,6 +344,15 @@ $API_FQDN = (az containerapp show -n ca-api-ai200ws-dev -g rg-ai200ws-dev `
   --query "properties.configuration.ingress.fqdn" -o tsv)
 ```
 
+> [!TIP]
+> **로컬 Docker Desktop 을 실행하지 않았다면 `az acr build` 로 클라우드에서 빌드 · 푸시할 수 있습니다.** 이 경우 위의 `az acr login` · `docker build` · `docker push` 가 모두 불필요하며, Azure Container Registry 가 amd64 노드에서 직접 빌드합니다 ([PREREQUISITES](../../PREREQUISITES.md) 의 "Docker Desktop 은 선택" 참고). bash · PowerShell 모두 다음 명령으로 동일하게 동작합니다.
+>
+> ```bash
+> az acr build --registry $ACR_NAME --image api:s03 --platform linux/amd64 apps/api
+> ```
+>
+> 이후 위의 `az containerapp update` 부터 이어서 실행합니다.
+
 의미는 같지만 표현이 다른 두 질문으로 캐시 효과를 측정합니다.
 
 ```bash
@@ -373,7 +382,7 @@ time curl -sX POST "https://$API_FQDN/api/chat" \
 }).TotalSeconds
 ```
 
-기대 — 첫 호출은 약 800~1500ms, 두 번째 호출은 그보다 크게 짧습니다.
+기대 — 첫 호출은 임베딩 · 검색 · gpt-5-mini 응답 생성 · (최초 1회) RediSearch 인덱스 생성 비용이 모두 더해져 **수 초**가 걸릴 수 있습니다. 두 번째 paraphrase 호출은 시맨틱 캐시 hit 으로 retrieve · generate 단계를 건너뛰므로 **수백 ms 이하**로 떨어집니다. 절대 시간보다 **두 번째 호출이 첫 호출보다 압도적으로 빠르다**는 점을 확인합니다.
 
 ---
 

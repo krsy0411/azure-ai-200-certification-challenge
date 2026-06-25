@@ -129,8 +129,12 @@ az bicep build --file infra/sessions/06-observability/main.bicep --outfile "$env
 if ($?) { "BUILD OK" }
 ```
 
+> [!NOTE]
+> 알림 수신 이메일은 `az ad signed-in-user show --query mail` 로 가져오지 않고, 알림을 받을 본인 이메일을 직접 입력합니다. 개인 Microsoft 계정·게스트(외부) 계정에서는 `mail` 속성이 비어 있어(null), 그 값을 쓰면 Action Group 에 수신 이메일이 등록되지 않아 알림 메일이 오지 않습니다.
+
 ```bash
-ALERT_EMAIL=$(az ad signed-in-user show --query mail -o tsv)
+# 알림 받을 본인 이메일 (mail 속성은 개인·게스트 계정에서 비어 있으므로 직접 지정)
+ALERT_EMAIL="you@example.com"   # ← 본인 이메일로 교체
 az deployment group create \
   --resource-group rg-ai200ws-dev \
   --template-file infra/sessions/06-observability/main.bicep \
@@ -140,7 +144,7 @@ az deployment group create \
 
 ```powershell
 # Windows PowerShell
-$ALERT_EMAIL = (az ad signed-in-user show --query mail -o tsv)
+$ALERT_EMAIL = "you@example.com"   # ← 본인 이메일로 교체
 az deployment group create `
   --resource-group rg-ai200ws-dev `
   --template-file infra/sessions/06-observability/main.bicep `

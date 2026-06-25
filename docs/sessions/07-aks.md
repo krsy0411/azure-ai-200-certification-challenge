@@ -225,7 +225,12 @@ kubectl get nodes
 ```powershell
 # Windows PowerShell
 $AKS = (az aks list -g rg-ai200ws-dev --query "[0].name" -o tsv)
-az aks show -n $AKS -g rg-ai200ws-dev --query "{state:powerState.code, version:kubernetesVersion}" -o jsonc
+az aks show -n $AKS -g rg-ai200ws-dev `
+  --query "{state:powerState.code, version:kubernetesVersion}" -o jsonc
+
+# --admin 사용 안 함 — Entra ID + Azure RBAC (Cluster User Role)
+az aks get-credentials -n $AKS -g rg-ai200ws-dev
+kubectl get nodes
 ```
 
 기대 — `state: Running`, 노드 2개 `Ready`.

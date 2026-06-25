@@ -58,8 +58,13 @@ node --version
 ```
 
 ```bash
-# Azure CLI
+# Azure CLI — Linux · macOS · WSL
 az --version | head -1
+```
+
+```powershell
+# Azure CLI — Windows PowerShell
+az --version | Select-Object -First 1
 ```
 
 ```bash
@@ -78,8 +83,13 @@ git --version
 ```
 
 ```bash
-# Docker — 데몬이 실행 중이면 Docker OK 가 출력됩니다
+# Docker — Linux · macOS · WSL — 데몬이 실행 중이면 Docker OK 가 출력됩니다
 docker info >/dev/null && echo "Docker OK"
+```
+
+```powershell
+# Docker — Windows PowerShell
+docker info | Out-Null; if ($?) { "Docker OK" }
 ```
 
 > [!NOTE]

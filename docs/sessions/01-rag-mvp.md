@@ -1018,6 +1018,16 @@ docker build --platform linux/amd64 -t "$ACR_NAME.azurecr.io/web:s01" apps/web
 docker push "$ACR_NAME.azurecr.io/web:s01"
 ```
 
+> [!TIP]
+> **로컬 Docker Desktop 을 실행하지 않았다면 위 2) · 3) 을 `az acr build` 로 대체할 수 있습니다.** 이 경우 1) 의 `az acr login` 과 `docker build` · `docker push` 가 모두 불필요하며, Azure Container Registry 가 amd64 노드에서 직접 빌드합니다 ([PREREQUISITES](../../PREREQUISITES.md) 의 "Docker Desktop 은 선택" 참고). bash · PowerShell 모두 다음 명령으로 동일하게 동작합니다.
+>
+> ```bash
+> az acr build --registry $ACR_NAME --image api:s01 --platform linux/amd64 apps/api
+> az acr build --registry $ACR_NAME --image web:s01 --platform linux/amd64 apps/web
+> ```
+>
+> 빌드 · 푸시가 끝나면 아래 4) 부터 이어서 실행합니다.
+
 ```bash
 # 4) Azure Container Apps revision 업데이트
 az containerapp update \

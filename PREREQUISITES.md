@@ -70,7 +70,6 @@
 ```bash
 az extension add --name containerapp --upgrade
 az extension add --name redisenterprise --upgrade
-az extension add --name appconfig --upgrade
 ```
 
 ### 2.3 Docker 이미지 사전 다운로드 (권장)
